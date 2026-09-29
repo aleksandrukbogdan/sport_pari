@@ -1,0 +1,9 @@
+[project]
+name = "news-svc"
+version = "0.1.0"
+description = "News feed, search and comments for the sport_pari platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.54.0",
+]
