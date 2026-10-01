@@ -65,3 +65,13 @@ def reset_password(payload: schemas.ResetPasswordRequest) -> schemas.StatusRespo
 
     storage.update_password_hash(user.username, security.hash_password(payload.new_password))
     return schemas.StatusResponse(status="ok")
+
+
+@router.post("/send-verify", response_model=schemas.VerifyResponse)
+def send_verify(payload: schemas.SendVerifyRequest) -> schemas.VerifyResponse:
+    user = storage.get_user_by_username_or_email(payload.username_or_email)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    storage.set_verified(user.username)
+    return schemas.VerifyResponse(status="ok", is_verified=True)
