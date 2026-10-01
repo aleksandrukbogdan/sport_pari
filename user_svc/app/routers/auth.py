@@ -27,6 +27,10 @@ def register(payload: schemas.RegistrationRequest) -> schemas.RegistrationRespon
         raise HTTPException(status.HTTP_409_CONFLICT, detail="username already registered")
     if storage.get_user_by_email(payload.email) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="email already registered")
+    if storage.get_user_by_email(payload.username) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="username already registered")
+    if storage.get_user_by_username(payload.email) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="email already registered")
 
     password_hash = security.hash_password(payload.password)
     user = storage.create_user(payload.username, payload.email, password_hash)
