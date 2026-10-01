@@ -55,3 +55,13 @@ def change_password(
 
     storage.update_password_hash(username, security.hash_password(payload.new_password))
     return schemas.StatusResponse(status="ok")
+
+
+@router.post("/reset-password", response_model=schemas.StatusResponse)
+def reset_password(payload: schemas.ResetPasswordRequest) -> schemas.StatusResponse:
+    user = storage.get_user_by_username_or_email(payload.username_or_email)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    storage.update_password_hash(user.username, security.hash_password(payload.new_password))
+    return schemas.StatusResponse(status="ok")
