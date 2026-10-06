@@ -1,81 +1,171 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app import schemas, security, storage
+from app import keycloak, schemas
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_username(
+def get_keycloak(request: Request) -> keycloak.KeycloakClient:
+    return request.app.state.keycloak
+
+
+def _login_response(tokens: keycloak.Tokens) -> schemas.LoginResponse:
+    return schemas.LoginResponse(
+        access_token=tokens.access_token,
+        expires_in=tokens.expires_in,
+        refresh_token=tokens.refresh_token,
+        refresh_expires_in=tokens.refresh_expires_in,
+    )
+
+
+def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-) -> str:
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> keycloak.TokenUser:
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
 
-    username = storage.resolve_session(credentials.credentials)
-    if username is None:
+    user = kc.introspect(credentials.credentials)
+    if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid or expired token")
 
-    return username
+    return user
 
 
 @router.post("/registration", response_model=schemas.RegistrationResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: schemas.RegistrationRequest) -> schemas.RegistrationResponse:
-    if storage.get_user_by_username(payload.username) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="username already registered")
-    if storage.get_user_by_email(payload.email) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="email already registered")
-    if storage.get_user_by_email(payload.username) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="username already registered")
-    if storage.get_user_by_username(payload.email) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="email already registered")
+def register(
+    payload: schemas.RegistrationRequest,
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.RegistrationResponse:
+    try:
+        user = kc.create_user(payload.username, payload.email, payload.password)
+    except keycloak.KeycloakConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"{exc.field} already registered")
+    except keycloak.InvalidUserData:
+        raise HTTPException(422, detail="invalid user data")
 
-    password_hash = security.hash_password(payload.password)
-    user = storage.create_user(payload.username, payload.email, password_hash)
-    return schemas.RegistrationResponse(username=user.username, email=user.email, is_verified=user.is_verified)
+    verification_sent = True
+    try:
+        kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
+    except keycloak.KeycloakUnavailable:
+        verification_sent = False
+        logger.warning("verification email was not sent for user %s", user["id"], exc_info=True)
+
+    return schemas.RegistrationResponse(
+        username=user["username"],
+        email=user["email"],
+        is_verified=bool(user.get("emailVerified", False)),
+        verification_sent=verification_sent,
+    )
 
 
 @router.post("/login", response_model=schemas.LoginResponse)
-def login(payload: schemas.LoginRequest) -> schemas.LoginResponse:
-    user = storage.get_user_by_username(payload.username)
-    if user is None or not security.verify_password(payload.password, user.password_hash):
+def login(
+    payload: schemas.LoginRequest,
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.LoginResponse:
+    try:
+        tokens = kc.login(payload.username, payload.password)
+    except keycloak.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid username or password")
+    except keycloak.EmailNotVerified:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="email not verified")
+    except keycloak.PasswordExpired:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="password expired")
+    except keycloak.AccountLocked:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many failed login attempts")
 
-    token = security.generate_token()
-    storage.create_session(token, user.username)
-    return schemas.LoginResponse(access_token=token)
+    return _login_response(tokens)
+
+
+@router.post("/refresh", response_model=schemas.LoginResponse)
+def refresh(
+    payload: schemas.RefreshRequest,
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.LoginResponse:
+    try:
+        tokens = kc.refresh(payload.refresh_token)
+    except keycloak.InvalidRefreshToken:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid or expired refresh token")
+
+    return _login_response(tokens)
+
+
+@router.get("/user", response_model=schemas.UserResponse)
+def read_user(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserResponse:
+    user = kc.get_user(current_user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    return schemas.UserResponse(
+        id=user["id"],
+        username=user["username"],
+        email=user.get("email", ""),
+        is_verified=bool(user.get("emailVerified", False)),
+        created_at=datetime.fromtimestamp(user["createdTimestamp"] / 1000, tz=timezone.utc),
+    )
 
 
 @router.post("/change-password", response_model=schemas.StatusResponse)
 def change_password(
     payload: schemas.ChangePasswordRequest,
-    username: str = Depends(get_current_username),
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
 ) -> schemas.StatusResponse:
-    user = storage.get_user_by_username(username)
-    if user is None or not security.verify_password(payload.old_password, user.password_hash):
+    try:
+        kc.verify_password(current_user.username, payload.old_password)
+    except keycloak.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="incorrect current password")
+    except keycloak.PasswordExpired:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="password expired")
+    except keycloak.AccountLocked:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many failed login attempts")
 
-    storage.update_password_hash(username, security.hash_password(payload.new_password))
+    kc.send_actions_email(current_user.id, ["UPDATE_PASSWORD"])
+    return schemas.StatusResponse(status="ok")
+
+
+@router.post("/logout", response_model=schemas.StatusResponse)
+def logout(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    kc.logout(current_user.session_id)
     return schemas.StatusResponse(status="ok")
 
 
 @router.post("/reset-password", response_model=schemas.StatusResponse)
-def reset_password(payload: schemas.ResetPasswordRequest) -> schemas.StatusResponse:
-    user = storage.get_user_by_username_or_email(payload.username_or_email)
+def reset_password(
+    payload: schemas.ResetPasswordRequest,
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    user = kc.find_user_by_email(payload.email)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
 
-    storage.update_password_hash(user.username, security.hash_password(payload.new_password))
+    kc.send_actions_email(user["id"], ["UPDATE_PASSWORD"])
     return schemas.StatusResponse(status="ok")
 
 
 @router.post("/send-verify", response_model=schemas.VerifyResponse)
-def send_verify(payload: schemas.SendVerifyRequest) -> schemas.VerifyResponse:
-    user = storage.get_user_by_username_or_email(payload.username_or_email)
+def send_verify(
+    payload: schemas.SendVerifyRequest,
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.VerifyResponse:
+    user = kc.find_user_by_email(payload.email)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
 
-    storage.set_verified(user.username)
-    return schemas.VerifyResponse(status="ok", is_verified=True)
+    kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
+    return schemas.VerifyResponse(status="ok", is_verified=bool(user.get("emailVerified", False)))
