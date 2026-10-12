@@ -11,6 +11,10 @@ class Settings(BaseSettings):
         "postgresql+psycopg://prediction:prediction@localhost:5432/prediction"
     )
     redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = "redis://localhost:6379/0"
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_topic: str = "sports.matches"
+    kafka_group_id: str = "prediction-notify"
 
 
 @lru_cache
