@@ -1,12 +1,17 @@
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.comments.repository import PostgresCommentRepository
+from app.db import get_session
 from app.news.repository import PostgresNewsRepository
 
-def get_news_repository() -> PostgresNewsRepository:
-    return PostgresNewsRepository()
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_news_repository(session: SessionDep) -> PostgresNewsRepository:
+    return PostgresNewsRepository(session)
 
 
 def get_comment_repository() -> PostgresCommentRepository:
