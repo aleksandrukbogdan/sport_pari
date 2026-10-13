@@ -17,8 +17,12 @@
   "maxFailureWaitSeconds": 900,
   "eventsEnabled": true,
   "eventsExpiration": 86400,
-  "enabledEventTypes": ["UPDATE_PASSWORD"],
-  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [
+    "UPDATE_PASSWORD"
+  ],
+  "eventsListeners": [
+    "jboss-logging"
+  ],
   "components": {
     "org.keycloak.userprofile.UserProfileProvider": [
       {
@@ -26,7 +30,7 @@
         "subComponents": {},
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false}]}"
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"deletion_scheduled_at\",\"displayName\":\"${deletion_scheduled_at}\",\"validations\":{},\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":true}]}"
           ]
         }
       }
@@ -50,7 +54,10 @@
       "enabled": true,
       "serviceAccountClientId": "user-svc",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users"]
+        "realm-management": [
+          "manage-users",
+          "view-users"
+        ]
       }
     }
   ]

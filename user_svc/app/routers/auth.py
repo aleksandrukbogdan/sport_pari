@@ -169,3 +169,38 @@ def send_verify(
 
     kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
     return schemas.VerifyResponse(status="ok", is_verified=bool(user.get("emailVerified", False)))
+
+
+@router.patch("/user", response_model=schemas.UserResponse)
+def update_user(
+    payload: schemas.UpdateUserRequest,
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserResponse:
+    user = kc.update_user(current_user.id, username=payload.username, email=payload.email)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    return schemas.UserResponse(
+        id=user["id"],
+        username=user["username"],
+        email=user.get("email", ""),
+        is_verified=bool(user.get("emailVerified", False)),
+        created_at=datetime.fromtimestamp(user["createdTimestamp"] / 1000, tz=timezone.utc),
+    )
+
+
+@router.delete("/user", response_model=schemas.DeleteUserResponse)
+def delete_user(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.DeleteUserResponse:
+    user = kc.soft_delete_user(current_user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    scheduled_at = None
+    if user.get("attributes", {}).get("deletion_scheduled_at"):
+        scheduled_at = datetime.fromisoformat(user["attributes"]["deletion_scheduled_at"][0])
+
+    return schemas.DeleteUserResponse(status="ok", scheduled_deletion_at=scheduled_at)

@@ -60,3 +60,13 @@ class StatusResponse(BaseModel):
 class VerifyResponse(BaseModel):
     status: str
     is_verified: bool
+
+
+class UpdateUserRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=1)
+    email: EmailStr | None = None
+
+
+class DeleteUserResponse(BaseModel):
+    status: str
+    scheduled_deletion_at: datetime | None = None

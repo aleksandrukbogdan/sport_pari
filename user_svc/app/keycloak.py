@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
 import httpx
 
@@ -235,3 +236,59 @@ class KeycloakClient:
     def send_actions_email(self, user_id: str, actions: list[str]) -> None:
         response = self._admin_request("PUT", f"/users/{user_id}/execute-actions-email", json=actions)
         self._ensure_ok(response)
+
+    def update_user(self, user_id: str, username: str | None = None, email: str | None = None) -> dict:
+        payload = {}
+        if username is not None:
+            payload["username"] = username
+        if email is not None:
+            payload["email"] = email
+        if not payload:
+            return self.get_user(user_id)
+
+        response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
+        if response.status_code == 409:
+            message = self._json_field(response, "errorMessage").lower()
+            raise KeycloakConflict("email" if "email" in message else "username")
+        if response.status_code == 400:
+            raise InvalidUserData
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        return self.get_user(user_id)
+
+    def soft_delete_user(self, user_id: str) -> dict:
+        """Disable user and schedule hard deletion in 6 months via custom attribute."""
+        from datetime import datetime, timezone, timedelta
+        deletion_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
+        payload = {
+            "enabled": False,
+            "attributes": {"deletion_scheduled_at": [deletion_at]},
+        }
+        response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        return self.get_user(user_id)
+
+    def get_users_scheduled_for_deletion(self) -> list[dict]:
+        """Find users with deletion_scheduled_at in the past."""
+        response = self._admin_request("GET", "/users", params={"briefRepresentation": "false"})
+        self._ensure_ok(response)
+        users = response.json()
+        now = datetime.now(timezone.utc).isoformat()
+        result = []
+        for u in users:
+            attrs = u.get("attributes", {})
+            scheduled = attrs.get("deletion_scheduled_at", [])
+            if scheduled and scheduled[0] < now:
+                result.append(u)
+        return result
+
+    def hard_delete_user(self, user_id: str) -> bool:
+        """Permanently delete user from Keycloak."""
+        response = self._admin_request("DELETE", f"/users/{user_id}")
+        if response.status_code == 404:
+            return False
+        self._ensure_ok(response)
+        return True

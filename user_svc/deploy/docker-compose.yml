@@ -69,12 +69,12 @@ services:
         condition: service_completed_successfully
     environment:
       KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:18080}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak
     ports:
-      - "8080:8080"
+      - "18080:8080"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - secrets:/secrets:ro
@@ -128,6 +128,12 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: sport-pari
       KEYCLOAK_CLIENT_ID: user-svc
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
+      RUN_SCHEDULER: "true"
     healthcheck:
       test:
         [
