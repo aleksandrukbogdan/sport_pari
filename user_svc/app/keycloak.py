@@ -204,7 +204,7 @@ class KeycloakClient:
                 "enabled": True,
                 "emailVerified": False,
                 "requiredActions": ["VERIFY_EMAIL"],
-                "credentials": [{"type": "password", "value": password, "temporary": False}],
+                "credentials": [{"type": "password", "value": password, "temporary": True}],
             },
         )
         if response.status_code == 409:
