@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import CommentRepo, CurrentUserId
 from app.comments.models import Comment
@@ -25,6 +25,9 @@ async def create_comment(
     repo: CommentRepo,
     author_id: CurrentUserId,
 ) -> CommentRead:
-    comment = Comment(news_id=news_id, author_id=author_id, body=payload.body.strip())
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="body is empty")
+    comment = Comment(news_id=news_id, author_id=author_id, body=body)
     saved = await repo.add(comment)
     return CommentRead.model_validate(saved)

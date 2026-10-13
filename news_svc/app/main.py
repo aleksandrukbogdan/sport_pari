@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api import api_router
+from app.errors import NewsNotFound
 
 
 @asynccontextmanager
@@ -13,6 +14,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="news-svc", version="0.1.0", lifespan=lifespan)
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.exception_handler(NewsNotFound)
+async def news_not_found(_: Request, __: NewsNotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": "News not found"})
 
 
 @app.exception_handler(NotImplementedError)
