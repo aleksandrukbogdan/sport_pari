@@ -14,8 +14,8 @@ def get_news_repository(session: SessionDep) -> PostgresNewsRepository:
     return PostgresNewsRepository(session)
 
 
-def get_comment_repository() -> PostgresCommentRepository:
-    return PostgresCommentRepository()
+def get_comment_repository(session: SessionDep) -> PostgresCommentRepository:
+    return PostgresCommentRepository(session)
 
 
 NewsRepo = Annotated[PostgresNewsRepository, Depends(get_news_repository)]
