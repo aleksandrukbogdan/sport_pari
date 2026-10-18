@@ -57,11 +57,6 @@ class StatusResponse(BaseModel):
     status: str
 
 
-class VerifyResponse(BaseModel):
-    status: str
-    is_verified: bool
-
-
 class UpdateUserRequest(BaseModel):
     username: str | None = Field(default=None, min_length=1)
     email: EmailStr | None = None

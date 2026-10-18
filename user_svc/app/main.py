@@ -6,6 +6,7 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.engine import URL
 
 from app.config import get_settings
 from app.keycloak import KeycloakClient, KeycloakUnavailable
@@ -26,22 +27,34 @@ def cleanup_deleted_users() -> None:
     try:
         users = kc.get_users_scheduled_for_deletion()
         for u in users:
-            kc.hard_delete_user(u["id"])
-            logger.info("Hard-deleted user %s (%s)", u["id"], u.get("username"))
-    except Exception:
+            try:
+                deleted = kc.hard_delete_user(u["id"])
+            except KeycloakUnavailable:
+                logger.exception("Failed to hard-delete user %s", u["id"])
+                continue
+            if deleted:
+                logger.info("Hard-deleted user %s (%s)", u["id"], u.get("username"))
+    except KeycloakUnavailable:
         logger.exception("cleanup_deleted_users failed")
     finally:
         kc.close()
 
 
-def get_postgres_url() -> str:
+def get_postgres_url() -> URL:
     """Build PostgreSQL URL from environment (same as Keycloak)."""
     host = os.getenv("POSTGRES_HOST", "postgres")
     port = os.getenv("POSTGRES_PORT", "5432")
     db = os.getenv("POSTGRES_DB", "keycloak")
     user = os.getenv("POSTGRES_USER", "keycloak")
     password = os.getenv("POSTGRES_PASSWORD", "")
-    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
+    return URL.create(
+        "postgresql+psycopg2",
+        username=user,
+        password=password,
+        host=host,
+        port=int(port),
+        database=db,
+    )
 
 
 @asynccontextmanager

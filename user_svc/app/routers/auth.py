@@ -145,30 +145,31 @@ def logout(
     return schemas.StatusResponse(status="ok")
 
 
+def _request_actions_email(email: str, action: str, kc: keycloak.KeycloakClient) -> None:
+    try:
+        user = kc.find_user_by_email(email)
+        if user is not None:
+            kc.send_actions_email(user["id"], [action])
+    except keycloak.KeycloakUnavailable:
+        logger.warning("Could not request %s email", action, exc_info=True)
+
+
 @router.post("/reset-password", response_model=schemas.StatusResponse)
 def reset_password(
     payload: schemas.ResetPasswordRequest,
     kc: keycloak.KeycloakClient = Depends(get_keycloak),
 ) -> schemas.StatusResponse:
-    user = kc.find_user_by_email(payload.email)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
-
-    kc.send_actions_email(user["id"], ["UPDATE_PASSWORD"])
+    _request_actions_email(payload.email, "UPDATE_PASSWORD", kc)
     return schemas.StatusResponse(status="ok")
 
 
-@router.post("/send-verify", response_model=schemas.VerifyResponse)
+@router.post("/send-verify", response_model=schemas.StatusResponse)
 def send_verify(
     payload: schemas.SendVerifyRequest,
     kc: keycloak.KeycloakClient = Depends(get_keycloak),
-) -> schemas.VerifyResponse:
-    user = kc.find_user_by_email(payload.email)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
-
-    kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
-    return schemas.VerifyResponse(status="ok", is_verified=bool(user.get("emailVerified", False)))
+) -> schemas.StatusResponse:
+    _request_actions_email(payload.email, "VERIFY_EMAIL", kc)
+    return schemas.StatusResponse(status="ok")
 
 
 @router.patch("/user", response_model=schemas.UserResponse)
