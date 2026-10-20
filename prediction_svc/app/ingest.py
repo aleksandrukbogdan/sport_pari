@@ -1,4 +1,3 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.events import SportsEvent
@@ -16,9 +15,4 @@ def record_event(session: Session, event: SportsEvent) -> bool:
             match_external_id=event.match.id,
         )
     )
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        return False
     return True
