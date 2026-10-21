@@ -1,0 +1,12 @@
+[project]
+name = "user-svc"
+version = "0.1.0"
+description = "Auth service (mock login/registration) for the sport_pari platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.54.0",
+    "httpx>=0.28",
+    "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+]
