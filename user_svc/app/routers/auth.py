@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import keycloak, schemas
@@ -114,6 +114,40 @@ def read_user(
         email=user.get("email", ""),
         is_verified=bool(user.get("emailVerified", False)),
         created_at=datetime.fromtimestamp(user["createdTimestamp"] / 1000, tz=timezone.utc),
+    )
+
+
+@router.get("/users/{user_id}/interests", response_model=schemas.UserInterests)
+def read_user_interests(
+    user_id: str = Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserInterests:
+    user = kc.get_user(user_id)
+    if user is None or not user.get("enabled", False):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    attributes = user.get("attributes", {})
+    return schemas.UserInterests(
+        sport_ids=attributes.get("sport_ids", []),
+        team_ids=attributes.get("team_ids", []),
+    )
+
+
+@router.put("/user/interests", response_model=schemas.UserInterests)
+def update_user_interests(
+    payload: schemas.UserInterests,
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserInterests:
+    try:
+        user = kc.update_interests(current_user.id, payload.sport_ids, payload.team_ids)
+    except keycloak.InvalidUserData:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid interests")
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    attributes = user.get("attributes", {})
+    return schemas.UserInterests(
+        sport_ids=attributes.get("sport_ids", []),
+        team_ids=attributes.get("team_ids", []),
     )
 
 

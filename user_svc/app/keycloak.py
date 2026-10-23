@@ -233,6 +233,24 @@ class KeycloakClient:
         users = response.json()
         return users[0] if users else None
 
+    def update_interests(self, user_id: str, sport_ids: list[str], team_ids: list[str]) -> dict | None:
+        user = self.get_user(user_id)
+        if user is None:
+            return None
+        attributes = {**user.get("attributes", {}), "sport_ids": sport_ids, "team_ids": team_ids}
+        response = self._admin_request("PUT", f"/users/{user_id}", json={"attributes": attributes})
+        if response.status_code == 404:
+            return None
+        if response.status_code == 400:
+            raise InvalidUserData
+        self._ensure_ok(response)
+        updated = self.get_user(user_id)
+        if updated is not None:
+            stored = updated.get("attributes", {})
+            if stored.get("sport_ids", []) != sport_ids or stored.get("team_ids", []) != team_ids:
+                raise KeycloakUnavailable("user interests were not persisted")
+        return updated
+
     def send_actions_email(self, user_id: str, actions: list[str]) -> None:
         response = self._admin_request("PUT", f"/users/{user_id}/execute-actions-email", json=actions)
         self._ensure_ok(response)
@@ -260,10 +278,13 @@ class KeycloakClient:
     def soft_delete_user(self, user_id: str) -> dict:
         """Disable user and schedule hard deletion in 6 months via custom attribute."""
         from datetime import datetime, timezone, timedelta
+        user = self.get_user(user_id)
+        if user is None:
+            return None
         deletion_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
         payload = {
             "enabled": False,
-            "attributes": {"deletion_scheduled_at": [deletion_at]},
+            "attributes": {**user.get("attributes", {}), "deletion_scheduled_at": [deletion_at]},
         }
         response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
         if response.status_code == 404:

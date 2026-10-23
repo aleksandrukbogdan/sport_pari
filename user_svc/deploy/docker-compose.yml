@@ -103,6 +103,7 @@ services:
       EVENTS_WINDOW: "3600"
     volumes:
       - ./keycloak/sync.py:/app/sync.py:ro
+      - ./keycloak/realm-export.json:/app/realm-export.json:ro
       - ./vault/state:/state:ro
     depends_on:
       keycloak:

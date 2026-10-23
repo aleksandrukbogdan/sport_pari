@@ -189,6 +189,35 @@ def sync_smtp(vault_token, admin_token):
     log.info("smtp settings applied from vault version %s", version)
 
 
+def sync_user_profile(admin_token):
+    path = os.path.join(os.path.dirname(__file__), "realm-export.json")
+    with open(path) as handle:
+        realm_config = json.load(handle)
+    provider = realm_config["components"]["org.keycloak.userprofile.UserProfileProvider"][0]
+    desired = json.loads(provider["config"]["kc.user.profile.config"][0])
+    desired_attributes = [
+        attribute for attribute in desired["attributes"]
+        if attribute["name"] in ("sport_ids", "team_ids")
+    ]
+    url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/profile"
+    headers = keycloak_headers(admin_token)
+    current = request("GET", url, headers=headers)
+    attributes = current.setdefault("attributes", [])
+    by_name = {attribute["name"]: attribute for attribute in attributes}
+    changed = False
+    for desired_attribute in desired_attributes:
+        existing = by_name.get(desired_attribute["name"])
+        if existing is None:
+            attributes.append(desired_attribute)
+            changed = True
+        elif any(existing.get(key) != value for key, value in desired_attribute.items()):
+            existing.update(desired_attribute)
+            changed = True
+    if changed:
+        request("PUT", url, headers=headers, body=current)
+        log.info("user interest attributes synchronized")
+
+
 def end_sessions_started_before(admin_token, user_id, before_ms):
     try:
         sessions = request(
@@ -259,6 +288,7 @@ def cycle():
     admin_token = sync_admin(vault_token)
     if admin_token is None:
         return
+    sync_user_profile(admin_token)
     sync_smtp(vault_token, admin_token)
 
 
