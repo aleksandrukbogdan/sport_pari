@@ -1,0 +1,12 @@
+{
+  "event_id": "6f0c1b2e-7a31-4d5e-9c10-0a1b2c3d4e5f",
+  "event_type": "match.scheduled",
+  "occurred_at": "2026-10-21T12:00:00+00:00",
+  "version": 1,
+  "match_id": 15,
+  "sport": "football",
+  "home": {"id": 1, "name": "North"},
+  "away": {"id": 2, "name": "South"},
+  "starts_at": "2026-10-25T18:00:00+00:00",
+  "status": "scheduled"
+}

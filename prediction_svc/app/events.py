@@ -45,6 +45,35 @@ class SportsEvent(BaseModel):
     version: int = Field(ge=0)
     match: MatchSnapshot
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_flat_sports_message(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if "match" not in data and "match_id" in data:
+            data["match"] = {
+                "id": data.get("match_id"),
+                "sport": data.get("sport"),
+                "home": data.get("home"),
+                "away": data.get("away"),
+                "starts_at": data.get("starts_at"),
+                "status": data.get("status"),
+                "score": data.get("score"),
+                "outcome": data.get("outcome"),
+            }
+        match = data.get("match")
+        if isinstance(match, dict):
+            normalized = dict(match)
+            if "id" in normalized and normalized["id"] is not None:
+                normalized["id"] = str(normalized["id"])
+            for side in ("home", "away"):
+                team = normalized.get(side)
+                if isinstance(team, dict) and "id" in team and team["id"] is not None:
+                    normalized[side] = {**team, "id": str(team["id"])}
+            data["match"] = normalized
+        return data
+
     @model_validator(mode="after")
     def result_events_include_score_and_outcome(self) -> Self:
         needs_result = self.event_type in {EventType.finished, EventType.result_corrected}
