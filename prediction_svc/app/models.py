@@ -92,6 +92,43 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class QuestionKind(enum.StrEnum):
+    match = "match"
+    event = "event"
+
+
+class VoteChoice(enum.StrEnum):
+    yes = "yes"
+    no = "no"
+
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[QuestionKind] = mapped_column(
+        Enum(QuestionKind, name="question_kind", native_enum=False, length=16),
+        index=True,
+    )
+    match_external_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class VoteCast(Base):
+    __tablename__ = "vote_casts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    choice: Mapped[VoteChoice] = mapped_column(
+        Enum(VoteChoice, name="vote_choice", native_enum=False, length=8)
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProcessedEvent(Base):
     __tablename__ = "processed_events"
 

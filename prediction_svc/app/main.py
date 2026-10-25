@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.routers.questions import router as questions_router
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.service_name)
+    app.include_router(questions_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -14,3 +14,11 @@ def get_engine():
 
 def get_session_factory():
     return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
+
+
+def get_db():
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        session.close()

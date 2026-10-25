@@ -19,6 +19,8 @@ def test_contract_tables_cover_match_copy_and_events() -> None:
         "user_predictions",
         "notifications",
         "processed_events",
+        "questions",
+        "vote_casts",
     }
 
     match_columns = {column["name"]: column for column in inspector.get_columns("matches")}

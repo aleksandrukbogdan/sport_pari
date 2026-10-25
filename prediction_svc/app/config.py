@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_topic: str = "sports.matches"
     kafka_group_id: str = "prediction-notify"
+    admin_user_ids: str = "admin"
 
 
 @lru_cache
