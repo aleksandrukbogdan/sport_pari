@@ -5,6 +5,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    # Local compose only. On the platform this port stays internal:
+    # the gateway is the public entry and the one that sets X-User-Id.
     ports:
       - "8000:8000"
     environment:
