@@ -9,6 +9,7 @@ from app.comments import models as comment_models  # noqa: F401
 from app.config import settings
 from app.db import Base
 from app.news import models as news_models  # noqa: F401
+from app.recommendations import models as recommendation_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

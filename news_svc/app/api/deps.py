@@ -25,8 +25,12 @@ CommentRepo = Annotated[PostgresCommentRepository, Depends(get_comment_repositor
 def get_current_user_id(x_user_id: Annotated[str | None, Header()] = None) -> str:
     """Identity is the gateway's job.
 
-    Inside the platform network the gateway forwards the authenticated user id.
-    This service does not validate JWT and does not keep a users table.
+    The header is trusted only because news-svc is not a public entry.
+    On the platform the process listens on the internal network, and the
+    gateway is what sets X-User-Id after authentication. This service does
+    not validate JWT and does not keep a users table. A client that can open
+    the port directly could send someone else's id; that port is published
+    only for local compose.
     """
 
     if not x_user_id or not x_user_id.strip():

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import api_router
 from app.errors import NewsNotFound
+from app.preview import router as preview_router
 
 
 @asynccontextmanager
@@ -13,6 +14,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="news-svc", version="0.1.0", lifespan=lifespan)
+app.include_router(preview_router)
 app.include_router(api_router, prefix="/api/v1")
 
 
