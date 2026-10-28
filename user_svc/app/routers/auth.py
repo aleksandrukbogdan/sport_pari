@@ -141,7 +141,7 @@ def update_user_interests(
     try:
         user = kc.update_interests(current_user.id, payload.sport_ids, payload.team_ids)
     except keycloak.InvalidUserData:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid interests")
+        raise HTTPException(422, detail="invalid interests")
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
     attributes = user.get("attributes", {})
@@ -206,22 +206,38 @@ def send_verify(
     return schemas.StatusResponse(status="ok")
 
 
-@router.patch("/user", response_model=schemas.UserResponse)
+@router.patch("/user", response_model=schemas.UpdateUserResponse)
 def update_user(
     payload: schemas.UpdateUserRequest,
     current_user: keycloak.TokenUser = Depends(get_current_user),
     kc: keycloak.KeycloakClient = Depends(get_keycloak),
-) -> schemas.UserResponse:
-    user = kc.update_user(current_user.id, username=payload.username, email=payload.email)
-    if user is None:
+) -> schemas.UpdateUserResponse:
+    try:
+        result = kc.update_user(current_user.id, username=payload.username, email=payload.email)
+    except keycloak.KeycloakConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"{exc.field} already registered")
+    except keycloak.InvalidUserData:
+        raise HTTPException(422, detail="invalid user data")
+    if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
 
-    return schemas.UserResponse(
+    user = result.user
+    verification_sent = None
+    if result.email_changed:
+        try:
+            kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
+            verification_sent = True
+        except keycloak.KeycloakUnavailable:
+            verification_sent = False
+            logger.warning("verification email was not sent for user %s", user["id"], exc_info=True)
+
+    return schemas.UpdateUserResponse(
         id=user["id"],
         username=user["username"],
         email=user.get("email", ""),
         is_verified=bool(user.get("emailVerified", False)),
         created_at=datetime.fromtimestamp(user["createdTimestamp"] / 1000, tz=timezone.utc),
+        verification_sent=verification_sent,
     )
 
 

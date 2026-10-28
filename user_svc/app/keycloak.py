@@ -60,6 +60,12 @@ class Tokens:
     refresh_expires_in: int
 
 
+@dataclass
+class UserUpdate:
+    user: dict
+    email_changed: bool
+
+
 class KeycloakClient:
     def __init__(self, settings: Settings) -> None:
         base = settings.keycloak_url.rstrip("/")
@@ -238,7 +244,9 @@ class KeycloakClient:
         if user is None:
             return None
         attributes = {**user.get("attributes", {}), "sport_ids": sport_ids, "team_ids": team_ids}
-        response = self._admin_request("PUT", f"/users/{user_id}", json={"attributes": attributes})
+        response = self._admin_request(
+            "PUT", f"/users/{user_id}", json={"username": user["username"], "attributes": attributes}
+        )
         if response.status_code == 404:
             return None
         if response.status_code == 400:
@@ -255,14 +263,21 @@ class KeycloakClient:
         response = self._admin_request("PUT", f"/users/{user_id}/execute-actions-email", json=actions)
         self._ensure_ok(response)
 
-    def update_user(self, user_id: str, username: str | None = None, email: str | None = None) -> dict:
+    def update_user(self, user_id: str, username: str | None = None, email: str | None = None) -> UserUpdate | None:
+        user = self.get_user(user_id)
+        if user is None:
+            return None
+        email_changed = email is not None and email.lower() != user.get("email", "").lower()
         payload = {}
         if username is not None:
             payload["username"] = username
-        if email is not None:
+        if email_changed:
             payload["email"] = email
+            payload["emailVerified"] = False
+            payload["requiredActions"] = list(dict.fromkeys([*user.get("requiredActions", []), "VERIFY_EMAIL"]))
         if not payload:
-            return self.get_user(user_id)
+            return UserUpdate(user=user, email_changed=False)
+        payload.setdefault("username", user["username"])
 
         response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
         if response.status_code == 409:
@@ -273,7 +288,8 @@ class KeycloakClient:
         if response.status_code == 404:
             return None
         self._ensure_ok(response)
-        return self.get_user(user_id)
+        updated = self.get_user(user_id)
+        return UserUpdate(user=updated, email_changed=email_changed) if updated is not None else None
 
     def soft_delete_user(self, user_id: str) -> dict:
         """Disable user and schedule hard deletion in 6 months via custom attribute."""
@@ -283,6 +299,7 @@ class KeycloakClient:
             return None
         deletion_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
         payload = {
+            "username": user["username"],
             "enabled": False,
             "attributes": {**user.get("attributes", {}), "deletion_scheduled_at": [deletion_at]},
         }

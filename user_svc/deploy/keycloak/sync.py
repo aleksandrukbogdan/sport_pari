@@ -216,6 +216,12 @@ def sync_user_profile(admin_token):
     if changed:
         request("PUT", url, headers=headers, body=current)
         log.info("user interest attributes synchronized")
+    realm_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}"
+    realm = request("GET", realm_url, headers=headers)
+    edit_username = realm_config.get("editUsernameAllowed", False)
+    if realm.get("editUsernameAllowed", False) != edit_username:
+        request("PUT", realm_url, headers=headers, body={"editUsernameAllowed": edit_username})
+        log.info("username editing setting synchronized")
 
 
 def end_sessions_started_before(admin_token, user_id, before_ms):

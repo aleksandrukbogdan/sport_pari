@@ -42,6 +42,10 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
+class UpdateUserResponse(UserResponse):
+    verification_sent: bool | None = None
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1)
 
