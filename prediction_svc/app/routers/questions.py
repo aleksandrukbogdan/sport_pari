@@ -1,16 +1,19 @@
 import uuid
 from typing import Self
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
+from app.auth import subject_from_bearer
 from app.config import get_settings
 from app.db import get_db
 from app.models import Question, QuestionKind, VoteChoice
 from app.voting import cast_vote, casts_for, chart, create_question, list_questions, yes_share
 
 router = APIRouter(prefix="/questions", tags=["questions"])
+_bearer = HTTPBearer(auto_error=False)
 
 
 class QuestionBody(BaseModel):
@@ -56,10 +59,13 @@ class ChartView(BaseModel):
     points: list[ChartPoint]
 
 
-def require_user(x_user_id: str | None = Header(default=None)) -> str:
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="missing user")
-    return x_user_id
+def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    try:
+        return subject_from_bearer(credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 def require_admin(user_id: str = Depends(require_user)) -> str:

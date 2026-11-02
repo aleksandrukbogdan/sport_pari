@@ -5,6 +5,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import create_app
+from tests.tokens import bearer
 
 
 def client() -> TestClient:
@@ -34,11 +35,11 @@ def test_admin_adds_questions_and_users_filter_them() -> None:
     event_body = {"title": "Перейдёт ли драфт?", "kind": "event"}
 
     assert api.post("/questions", json=event_body).status_code == 401
-    assert api.post("/questions", headers={"X-User-Id": "user-1"}, json=event_body).status_code == 403
-    assert api.post("/questions", headers={"X-User-Id": "admin"}, json={"title": "Без матча", "kind": "match"}).status_code == 422
+    assert api.post("/questions", headers=bearer("user-1"), json=event_body).status_code == 403
+    assert api.post("/questions", headers=bearer("admin"), json={"title": "Без матча", "kind": "match"}).status_code == 422
 
-    match = api.post("/questions", headers={"X-User-Id": "admin"}, json=match_body)
-    event = api.post("/questions", headers={"X-User-Id": "admin"}, json=event_body)
+    match = api.post("/questions", headers=bearer("admin"), json=match_body)
+    event = api.post("/questions", headers=bearer("admin"), json=event_body)
     assert match.status_code == 201
     assert event.status_code == 201
     assert match.json()["yes_share"] is None
@@ -53,15 +54,15 @@ def test_votes_move_the_yes_share_over_time() -> None:
     api = client()
     created = api.post(
         "/questions",
-        headers={"X-User-Id": "admin"},
+        headers=bearer("admin"),
         json={"title": "Перейдёт ли драфт?", "kind": "event"},
     )
     question_id = created.json()["id"]
 
-    first = api.post(f"/questions/{question_id}/votes", headers={"X-User-Id": "user-1"}, json={"choice": "yes"})
-    again = api.post(f"/questions/{question_id}/votes", headers={"X-User-Id": "user-1"}, json={"choice": "yes"})
-    second = api.post(f"/questions/{question_id}/votes", headers={"X-User-Id": "user-2"}, json={"choice": "no"})
-    changed = api.post(f"/questions/{question_id}/votes", headers={"X-User-Id": "user-1"}, json={"choice": "no"})
+    first = api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "yes"})
+    again = api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "yes"})
+    second = api.post(f"/questions/{question_id}/votes", headers=bearer("user-2"), json={"choice": "no"})
+    changed = api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "no"})
     assert first.status_code == 200
     assert again.json()["yes"] == 1
     assert second.json()["yes_share"] == 0.5
