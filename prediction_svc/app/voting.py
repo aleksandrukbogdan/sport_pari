@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Match, Question, QuestionKind, VoteCast, VoteChoice
+from app.events import EventType, SportsEvent
+from app.models import Match, Question, QuestionKind, QuestionStatus, VoteCast, VoteChoice
 
 
 class UnknownMatch(Exception):
@@ -70,10 +71,43 @@ def chart(casts: list[VoteCast]) -> tuple[int, int, list[dict]]:
     return points[-1]["yes"], points[-1]["no"], points
 
 
+def close_question(session: Session, question_id) -> str:
+    question = session.get(Question, question_id)
+    if question is None:
+        return "missing"
+    if question.status != QuestionStatus.open:
+        return "closed"
+    question.status = QuestionStatus.closed
+    session.commit()
+    return "closed"
+
+
+def apply_match_facts(session: Session, event: SportsEvent) -> None:
+    if event.event_type not in {EventType.finished, EventType.cancelled, EventType.result_corrected}:
+        return
+    questions = session.scalars(
+        select(Question).where(
+            Question.kind == QuestionKind.match,
+            Question.match_external_id == event.match.id,
+        )
+    ).all()
+    for question in questions:
+        if event.event_type == EventType.cancelled:
+            question.status = QuestionStatus.withdrawn
+            question.factual_outcome = None
+            continue
+        if question.status == QuestionStatus.withdrawn:
+            continue
+        question.status = QuestionStatus.closed
+        question.factual_outcome = event.match.outcome
+
+
 def cast_vote(session: Session, question_id, user_id: str, choice: VoteChoice) -> str:
     question = session.get(Question, question_id)
     if question is None:
         return "missing"
+    if question.status != QuestionStatus.open:
+        return "closed"
 
     previous = session.scalar(
         select(VoteCast)

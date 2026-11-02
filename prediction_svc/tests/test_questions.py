@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
+from app.ingest import store_event
 from app.main import create_app
 from app.models import Match, MatchStatus
 from tests.tokens import bearer
@@ -102,3 +105,71 @@ def test_votes_move_the_yes_share_over_time() -> None:
     chart = api.get(f"/questions/{question_id}/chart").json()
     assert [point["yes_share"] for point in chart["points"]] == [1.0, 0.5, 0.0]
     assert chart["yes_share"] == 0.0
+
+
+def test_admin_close_rejects_a_new_vote() -> None:
+    api = client()
+    created = api.post(
+        "/questions",
+        headers=bearer("admin"),
+        json={"title": "Перейдёт ли драфт?", "kind": "event"},
+    )
+    question_id = created.json()["id"]
+
+    closed = api.post(f"/questions/{question_id}/close", headers=bearer("admin"))
+    rejected = api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "yes"})
+
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "closed"
+    assert rejected.status_code == 409
+    assert api.get(f"/questions/{question_id}/chart").status_code == 200
+
+
+def test_finished_match_shows_the_outcome_and_stops_votes() -> None:
+    api = client()
+    seed_match(api)
+    created = api.post(
+        "/questions",
+        headers=bearer("admin"),
+        json={"title": "North победит?", "kind": "match", "match_external_id": "15"},
+    )
+    question_id = created.json()["id"]
+    api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "yes"})
+
+    payload = json.loads((Path(__file__).parent / "fixtures" / "sports_finished.json").read_text(encoding="utf-8"))
+    session = api.app.state.session_factory()
+    assert store_event(session, payload) == "recorded"
+    session.close()
+
+    question = api.get("/questions", params={"kind": "match"}).json()[0]
+    rejected = api.post(f"/questions/{question_id}/votes", headers=bearer("user-2"), json={"choice": "no"})
+    assert question["status"] == "closed"
+    assert question["factual_outcome"] == "home"
+    assert question["yes"] == 1
+    assert "points" not in question
+    assert rejected.status_code == 409
+
+
+def test_cancelled_match_withdraws_the_question() -> None:
+    api = client()
+    seed_match(api)
+    created = api.post(
+        "/questions",
+        headers=bearer("admin"),
+        json={"title": "North победит?", "kind": "match", "match_external_id": "15"},
+    )
+    payload = json.loads((Path(__file__).parent / "fixtures" / "sports_finished.json").read_text(encoding="utf-8"))
+    payload["event_id"] = "8b2e3d4f-9c53-4f70-1e32-2c3d4e5f6071"
+    payload["event_type"] = "match.cancelled"
+    payload["status"] = "cancelled"
+    payload.pop("outcome")
+
+    session = api.app.state.session_factory()
+    assert store_event(session, payload) == "recorded"
+    session.close()
+
+    question = api.get(f"/questions/{created.json()['id']}/chart")
+    listed = api.get("/questions", params={"kind": "match"}).json()[0]
+    assert question.status_code == 200
+    assert listed["status"] == "withdrawn"
+    assert listed["factual_outcome"] is None

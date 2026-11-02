@@ -11,7 +11,18 @@ from app.auth import subject_from_bearer
 from app.config import get_settings
 from app.db import get_db
 from app.models import Question, QuestionKind, VoteChoice
-from app.voting import UnknownMatch, cast_vote, casts_for, chart, create_question, list_questions, match_copy, yes_share
+from app.models import QuestionStatus
+from app.voting import (
+    UnknownMatch,
+    cast_vote,
+    casts_for,
+    chart,
+    close_question,
+    create_question,
+    list_questions,
+    match_copy,
+    yes_share,
+)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 _bearer = HTTPBearer(auto_error=False)
@@ -44,6 +55,8 @@ class QuestionView(BaseModel):
     away_name: str | None = None
     starts_at: datetime | None = None
     match_status: str | None = None
+    status: QuestionStatus
+    factual_outcome: str | None = None
     yes: int
     no: int
     yes_share: float | None
@@ -92,6 +105,8 @@ def view_question(session: Session, question: Question) -> QuestionView:
         away_name=None if match is None else match.away_name,
         starts_at=None if match is None else match.starts_at,
         match_status=None if match is None else match.status.value,
+        status=question.status,
+        factual_outcome=None if question.factual_outcome is None else question.factual_outcome.value,
         yes=yes,
         no=no,
         yes_share=yes_share(yes, no),
@@ -119,6 +134,19 @@ def get_questions(
     return [view_question(session, question) for question in list_questions(session, kind)]
 
 
+@router.post("/{question_id}/close", response_model=QuestionView)
+def post_close(
+    question_id: uuid.UUID,
+    _: str = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> QuestionView:
+    result = close_question(session, question_id)
+    if result == "missing":
+        raise HTTPException(status_code=404, detail="question not found")
+    question = session.get(Question, question_id)
+    return view_question(session, question)
+
+
 @router.post("/{question_id}/votes", response_model=QuestionView)
 def post_vote(
     question_id: uuid.UUID,
@@ -129,6 +157,8 @@ def post_vote(
     result = cast_vote(session, question_id, user_id, body.choice)
     if result == "missing":
         raise HTTPException(status_code=404, detail="question not found")
+    if result == "closed":
+        raise HTTPException(status_code=409, detail="voting is closed")
     question = session.get(Question, question_id)
     return view_question(session, question)
 

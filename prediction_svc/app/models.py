@@ -102,6 +102,12 @@ class VoteChoice(enum.StrEnum):
     no = "no"
 
 
+class QuestionStatus(enum.StrEnum):
+    open = "open"
+    closed = "closed"
+    withdrawn = "withdrawn"
+
+
 class Question(Base):
     __tablename__ = "questions"
 
@@ -112,6 +118,14 @@ class Question(Base):
         index=True,
     )
     match_external_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[QuestionStatus] = mapped_column(
+        Enum(QuestionStatus, name="question_status", native_enum=False, length=16),
+        default=QuestionStatus.open,
+        server_default=QuestionStatus.open.value,
+    )
+    factual_outcome: Mapped[Outcome | None] = mapped_column(
+        Enum(Outcome, name="question_outcome", native_enum=False, length=16)
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
