@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.events import SportsEvent
 from app.matches import SCHEDULE_EVENTS, upsert_match
 from app.models import ProcessedEvent
+from app.voting import apply_match_facts
 
 
 def record_event(session: Session, event: SportsEvent) -> bool:
@@ -26,6 +27,7 @@ def store_event(session: Session, payload: dict) -> str:
         return "skipped"
 
     upsert_match(session, event)
+    apply_match_facts(session, event)
     try:
         session.commit()
     except IntegrityError:

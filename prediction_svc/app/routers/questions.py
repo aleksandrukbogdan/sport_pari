@@ -1,16 +1,31 @@
 import uuid
+from datetime import datetime
 from typing import Self
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
+from app.auth import subject_from_bearer
 from app.config import get_settings
 from app.db import get_db
 from app.models import Question, QuestionKind, VoteChoice
-from app.voting import cast_vote, casts_for, chart, create_question, list_questions, yes_share
+from app.models import QuestionStatus
+from app.voting import (
+    UnknownMatch,
+    cast_vote,
+    casts_for,
+    chart,
+    close_question,
+    create_question,
+    list_questions,
+    match_copy,
+    yes_share,
+)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
+_bearer = HTTPBearer(auto_error=False)
 
 
 class QuestionBody(BaseModel):
@@ -36,6 +51,12 @@ class QuestionView(BaseModel):
     title: str
     kind: QuestionKind
     match_external_id: str | None
+    home_name: str | None = None
+    away_name: str | None = None
+    starts_at: datetime | None = None
+    match_status: str | None = None
+    status: QuestionStatus
+    factual_outcome: str | None = None
     yes: int
     no: int
     yes_share: float | None
@@ -56,10 +77,13 @@ class ChartView(BaseModel):
     points: list[ChartPoint]
 
 
-def require_user(x_user_id: str | None = Header(default=None)) -> str:
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="missing user")
-    return x_user_id
+def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    try:
+        return subject_from_bearer(credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 def require_admin(user_id: str = Depends(require_user)) -> str:
@@ -71,11 +95,18 @@ def require_admin(user_id: str = Depends(require_user)) -> str:
 
 def view_question(session: Session, question: Question) -> QuestionView:
     yes, no, _points = chart(casts_for(session, question.id))
+    match = match_copy(session, question.match_external_id)
     return QuestionView(
         id=question.id,
         title=question.title,
         kind=question.kind,
         match_external_id=question.match_external_id,
+        home_name=None if match is None else match.home_name,
+        away_name=None if match is None else match.away_name,
+        starts_at=None if match is None else match.starts_at,
+        match_status=None if match is None else match.status.value,
+        status=question.status,
+        factual_outcome=None if question.factual_outcome is None else question.factual_outcome.value,
         yes=yes,
         no=no,
         yes_share=yes_share(yes, no),
@@ -88,7 +119,10 @@ def post_question(
     _: str = Depends(require_admin),
     session: Session = Depends(get_db),
 ) -> QuestionView:
-    question = create_question(session, body.title, body.kind, body.match_external_id)
+    try:
+        question = create_question(session, body.title, body.kind, body.match_external_id)
+    except UnknownMatch:
+        raise HTTPException(status_code=404, detail="match not found") from None
     return view_question(session, question)
 
 
@@ -98,6 +132,19 @@ def get_questions(
     session: Session = Depends(get_db),
 ) -> list[QuestionView]:
     return [view_question(session, question) for question in list_questions(session, kind)]
+
+
+@router.post("/{question_id}/close", response_model=QuestionView)
+def post_close(
+    question_id: uuid.UUID,
+    _: str = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> QuestionView:
+    result = close_question(session, question_id)
+    if result == "missing":
+        raise HTTPException(status_code=404, detail="question not found")
+    question = session.get(Question, question_id)
+    return view_question(session, question)
 
 
 @router.post("/{question_id}/votes", response_model=QuestionView)
@@ -110,6 +157,8 @@ def post_vote(
     result = cast_vote(session, question_id, user_id, body.choice)
     if result == "missing":
         raise HTTPException(status_code=404, detail="question not found")
+    if result == "closed":
+        raise HTTPException(status_code=409, detail="voting is closed")
     question = session.get(Question, question_id)
     return view_question(session, question)
 
