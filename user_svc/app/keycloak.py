@@ -189,6 +189,27 @@ class KeycloakClient:
             return
         self._ensure_ok(response)
 
+    def get_user_sessions(self, user_id: str) -> list[dict] | None:
+        response = self._admin_request("GET", f"/users/{user_id}/sessions")
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        return response.json()
+
+    def delete_user_session(self, user_id: str, session_id: str) -> bool:
+        sessions = self.get_user_sessions(user_id)
+        if sessions is None or not any(session["id"] == session_id for session in sessions):
+            return False
+        self.logout(session_id)
+        return True
+
+    def logout_all(self, user_id: str) -> bool:
+        response = self._admin_request("POST", f"/users/{user_id}/logout")
+        if response.status_code == 404:
+            return False
+        self._ensure_ok(response)
+        return True
+
     def introspect(self, token: str) -> TokenUser | None:
         response = self._send(
             "POST",

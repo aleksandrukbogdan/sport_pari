@@ -179,6 +179,47 @@ def logout(
     return schemas.StatusResponse(status="ok")
 
 
+@router.get("/user/sessions", response_model=list[schemas.UserSessionResponse])
+def read_user_sessions(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> list[schemas.UserSessionResponse]:
+    sessions = kc.get_user_sessions(current_user.id)
+    if sessions is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    return [
+        schemas.UserSessionResponse(
+            id=session["id"],
+            started_at=datetime.fromtimestamp(session["start"] / 1000, tz=timezone.utc),
+            last_access_at=datetime.fromtimestamp(session["lastAccess"] / 1000, tz=timezone.utc),
+            ip_address=session.get("ipAddress"),
+            is_current=session["id"] == current_user.session_id,
+        )
+        for session in sessions
+    ]
+
+
+@router.delete("/user/sessions/{session_id}", response_model=schemas.StatusResponse)
+def delete_user_session(
+    session_id: str = Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    if not kc.delete_user_session(current_user.id, session_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    return schemas.StatusResponse(status="ok")
+
+
+@router.post("/logout-all", response_model=schemas.StatusResponse)
+def logout_all(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    if not kc.logout_all(current_user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    return schemas.StatusResponse(status="ok")
+
+
 def _request_actions_email(email: str, action: str, kc: keycloak.KeycloakClient) -> None:
     try:
         user = kc.find_user_by_email(email)

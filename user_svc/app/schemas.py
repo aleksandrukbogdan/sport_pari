@@ -46,6 +46,14 @@ class UpdateUserResponse(UserResponse):
     verification_sent: bool | None = None
 
 
+class UserSessionResponse(BaseModel):
+    id: str
+    started_at: datetime
+    last_access_at: datetime
+    ip_address: str | None = None
+    is_current: bool
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1)
 
