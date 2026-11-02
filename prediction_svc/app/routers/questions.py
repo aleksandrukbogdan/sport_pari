@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Self
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,7 @@ from app.auth import subject_from_bearer
 from app.config import get_settings
 from app.db import get_db
 from app.models import Question, QuestionKind, VoteChoice
-from app.voting import cast_vote, casts_for, chart, create_question, list_questions, yes_share
+from app.voting import UnknownMatch, cast_vote, casts_for, chart, create_question, list_questions, match_copy, yes_share
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 _bearer = HTTPBearer(auto_error=False)
@@ -39,6 +40,10 @@ class QuestionView(BaseModel):
     title: str
     kind: QuestionKind
     match_external_id: str | None
+    home_name: str | None = None
+    away_name: str | None = None
+    starts_at: datetime | None = None
+    match_status: str | None = None
     yes: int
     no: int
     yes_share: float | None
@@ -77,11 +82,16 @@ def require_admin(user_id: str = Depends(require_user)) -> str:
 
 def view_question(session: Session, question: Question) -> QuestionView:
     yes, no, _points = chart(casts_for(session, question.id))
+    match = match_copy(session, question.match_external_id)
     return QuestionView(
         id=question.id,
         title=question.title,
         kind=question.kind,
         match_external_id=question.match_external_id,
+        home_name=None if match is None else match.home_name,
+        away_name=None if match is None else match.away_name,
+        starts_at=None if match is None else match.starts_at,
+        match_status=None if match is None else match.status.value,
         yes=yes,
         no=no,
         yes_share=yes_share(yes, no),
@@ -94,7 +104,10 @@ def post_question(
     _: str = Depends(require_admin),
     session: Session = Depends(get_db),
 ) -> QuestionView:
-    question = create_question(session, body.title, body.kind, body.match_external_id)
+    try:
+        question = create_question(session, body.title, body.kind, body.match_external_id)
+    except UnknownMatch:
+        raise HTTPException(status_code=404, detail="match not found") from None
     return view_question(session, question)
 
 
