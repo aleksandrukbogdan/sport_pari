@@ -36,7 +36,7 @@ user profile на следующем цикле синхронизации, со
 docker compose -f deploy/docker-compose.yml up -d keycloak-sync
 ```
 
-Дождитесь сообщения `user interest attributes synchronized`. API перечитывает
+Дождитесь сообщения `user profile attributes synchronized`. API перечитывает
 сохранённые интересы; если Keycloak отбросил значения из-за ещё не применённой
 декларации, запись возвращает 502 вместо ложного подтверждения сохранения.
 

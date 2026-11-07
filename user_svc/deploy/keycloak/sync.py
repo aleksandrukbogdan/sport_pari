@@ -197,7 +197,7 @@ def sync_user_profile(admin_token):
     desired = json.loads(provider["config"]["kc.user.profile.config"][0])
     desired_attributes = [
         attribute for attribute in desired["attributes"]
-        if attribute["name"] in ("sport_ids", "team_ids")
+        if attribute["name"] in ("sport_ids", "team_ids", "deletion_scheduled_at")
     ]
     url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/profile"
     headers = keycloak_headers(admin_token)
@@ -215,7 +215,7 @@ def sync_user_profile(admin_token):
             changed = True
     if changed:
         request("PUT", url, headers=headers, body=current)
-        log.info("user interest attributes synchronized")
+        log.info("user profile attributes synchronized")
     realm_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}"
     realm = request("GET", realm_url, headers=headers)
     edit_username = realm_config.get("editUsernameAllowed", False)

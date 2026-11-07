@@ -332,17 +332,36 @@ class KeycloakClient:
 
     def get_users_scheduled_for_deletion(self) -> list[dict]:
         """Find users with deletion_scheduled_at in the past."""
-        response = self._admin_request("GET", "/users", params={"briefRepresentation": "false"})
-        self._ensure_ok(response)
-        users = response.json()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         result = []
-        for u in users:
-            attrs = u.get("attributes", {})
-            scheduled = attrs.get("deletion_scheduled_at", [])
-            if scheduled and scheduled[0] < now:
-                result.append(u)
-        return result
+        first = 0
+        page_size = 100
+        while True:
+            response = self._admin_request(
+                "GET", "/users",
+                params={"briefRepresentation": "false", "first": first, "max": page_size},
+            )
+            self._ensure_ok(response)
+            users = response.json()
+            for user in users:
+                attributes = user.get("attributes") or {}
+                scheduled = attributes.get("deletion_scheduled_at", [])
+                if not scheduled:
+                    continue
+                try:
+                    if not isinstance(scheduled, list) or len(scheduled) != 1:
+                        raise ValueError("expected one deletion date")
+                    deletion_at = datetime.fromisoformat(scheduled[0])
+                    if deletion_at.tzinfo is None:
+                        raise ValueError("deletion date has no timezone")
+                except (ValueError, TypeError):
+                    logger.warning("Ignoring invalid deletion_scheduled_at for user %s", user.get("id"))
+                    continue
+                if deletion_at <= now:
+                    result.append(user)
+            if len(users) < page_size:
+                return result
+            first += len(users)
 
     def hard_delete_user(self, user_id: str) -> bool:
         """Permanently delete user from Keycloak."""
