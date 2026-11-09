@@ -9,7 +9,7 @@ class PostgresNewsRepository:
     """Published news, newest first.
 
     A row without published_at is a draft and stays out of the feed.
-    comments_count is a subquery, not a loaded comment collection.
+    comments_count includes only visible comments.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -18,7 +18,7 @@ class PostgresNewsRepository:
     def _published(self):
         comments_count = (
             select(func.count(Comment.id))
-            .where(Comment.news_id == News.id)
+            .where(Comment.news_id == News.id, Comment.is_hidden.is_(False))
             .correlate(News)
             .scalar_subquery()
         )
