@@ -1,4 +1,5 @@
 from app.clients.user_service import UserInterests, UserServiceClient
+from app.news.models import News
 from app.news.repository import PostgresNewsRepository
 from app.recommendations.repository import PostgresViewRepository
 from app.recommendations.schemas import Recommendation
@@ -10,10 +11,8 @@ class RecommendationService:
     """Короткий список опубликованных материалов.
 
     Зависимости приходят снаружи, сервис их не создаёт.
-    База выдачи — уже опубликованная лента, не отдельный ранкер.
-    Интересы, если сервис пользователей ответил, поднимают свои виды спорта наверх.
-    Уже открытое остаётся в списке, но уходит ниже: иначе после одного просмотра
-    блок может опустеть.
+    Совпадение по виду спорта поднимает материал среди прочитанных или непрочитанных.
+    Популярность определяет порядок внутри каждой группы.
     """
 
     def __init__(
@@ -33,34 +32,37 @@ class RecommendationService:
             limit=_CANDIDATE_LIMIT,
             offset=0,
         )
-        seen = await self.views.seen_news_ids(user_id)
-        ordered = sorted(rows, key=lambda row: _sort_key(row[0].id, row[0].sport_id, seen, interests))
-        return [_recommendation(news, seen, interests) for news, _count in ordered[:limit]]
+        if not rows:
+            return []
+        news_ids = [news.id for news, _ in rows]
+        seen = await self.views.seen_news_ids(user_id, news_ids)
+        popularity = await self.views.decayed_popularity(news_ids)
+        recommendations = [
+            _recommendation(news, seen, interests, popularity.get(news.id, 0.0))
+            for news, _ in rows
+        ]
+        return sorted(recommendations, key=lambda item: item.score, reverse=True)[:limit]
 
 
 def _matches(sport_id: str, interests: UserInterests | None) -> bool:
     return bool(interests and interests.sport_ids and sport_id in interests.sport_ids)
 
 
-def _sort_key(
-    news_id: int,
-    sport_id: str,
+def _recommendation(
+    news: News,
     seen: set[int],
     interests: UserInterests | None,
-) -> tuple[bool, bool]:
-    return (news_id in seen, not _matches(sport_id, interests))
-
-
-def _recommendation(news, seen: set[int], interests: UserInterests | None) -> Recommendation:
+    popularity: float,
+) -> Recommendation:
     matched = _matches(news.sport_id, interests)
-    if matched and news.id not in seen:
-        score = 1.0
-    elif news.id not in seen:
-        score = 0.5
+    if news.id in seen:
+        base_score = 0.3 if matched else 0.2
     else:
-        score = 0.2
+        base_score = 0.9 if matched else 0.5
+    # The popularity bonus stays within the gap between priority groups.
+    popularity_bonus = 0.1 * popularity / (1 + popularity)
     return Recommendation(
         news_id=news.id,
-        score=score,
+        score=base_score + popularity_bonus,
         reason="sport" if matched else "popularity",
     )

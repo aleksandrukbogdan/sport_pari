@@ -1,4 +1,6 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from app.api.recommendations import get_user_service
 from app.clients.user_service import UserInterests
@@ -95,6 +97,37 @@ async def test_opened_article_sinks_but_stays_in_the_list(client):
 
     ids = [item["news_id"] for item in response.json()]
     assert ids == [first, second]
+
+
+async def test_fresh_view_outweighs_two_old_views(client):
+    popular = await _insert("Свежий интерес", "football")
+    stale = await _insert("Прошлый интерес", "football")
+    now = datetime.now(UTC)
+    old_view = now - timedelta(hours=72)
+    async with SessionLocal() as session:
+        session.add_all([
+            NewsView(user_id="reader-1", news_id=stale, created_at=old_view),
+            NewsView(user_id="reader-2", news_id=stale, created_at=old_view),
+            NewsView(user_id="reader-3", news_id=popular, created_at=now),
+        ])
+        await session.commit()
+
+    _use_interests(None)
+    try:
+        response = await client.get(
+            "/api/v1/recommendations",
+            headers={"X-User-Id": "user-1"},
+            params={"limit": 2},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["news_id"] for item in payload] == [popular, stale]
+    assert [item["score"] for item in payload] == pytest.approx(
+        [0.55, 0.5 + 0.1 / 3], abs=0.00001,
+    )
 
 
 async def test_view_of_missing_news_returns_404(client):

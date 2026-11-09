@@ -51,7 +51,7 @@ async def preview(news: NewsRepo, recommendations: Recommendations, user_id: str
         )
     pick_lines = "".join(
         f"<li><a href=\"/preview/news/{item.news_id}?user_id={quote(user_id)}\">"
-        f"#{item.news_id}</a> · {escape(item.reason)} · {item.score}</li>"
+        f"#{item.news_id}</a> · {escape(item.reason)} · {item.score:.3f}</li>"
         for item in picks
     )
     feed = "".join(cards) or "<p>Лента пустая. Запустите python -m app.seed.</p>"
