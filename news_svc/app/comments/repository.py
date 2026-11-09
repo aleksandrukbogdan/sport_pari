@@ -7,7 +7,7 @@ from app.news.models import News
 
 
 class PostgresCommentRepository:
-    """Flat thread under one published article, oldest first.
+    """Visible comments under one published article, oldest first.
 
     A missing or unpublished article raises NewsNotFound for both reads and writes.
     """
@@ -32,7 +32,7 @@ class PostgresCommentRepository:
         await self._require_published(news_id)
         stmt = (
             select(Comment)
-            .where(Comment.news_id == news_id)
+            .where(Comment.news_id == news_id, Comment.is_hidden.is_(False))
             .order_by(Comment.created_at.asc(), Comment.id.asc())
             .limit(limit)
             .offset(offset)
