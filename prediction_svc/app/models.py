@@ -52,6 +52,7 @@ class Match(Base):
         Enum(Outcome, name="match_outcome", native_enum=False, length=16)
     )
     version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    source_occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
