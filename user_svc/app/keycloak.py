@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
 import httpx
 
@@ -57,6 +58,12 @@ class Tokens:
     expires_in: int
     refresh_token: str
     refresh_expires_in: int
+
+
+@dataclass
+class UserUpdate:
+    user: dict
+    email_changed: bool
 
 
 class KeycloakClient:
@@ -182,6 +189,27 @@ class KeycloakClient:
             return
         self._ensure_ok(response)
 
+    def get_user_sessions(self, user_id: str) -> list[dict] | None:
+        response = self._admin_request("GET", f"/users/{user_id}/sessions")
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        return response.json()
+
+    def delete_user_session(self, user_id: str, session_id: str) -> bool:
+        sessions = self.get_user_sessions(user_id)
+        if sessions is None or not any(session["id"] == session_id for session in sessions):
+            return False
+        self.logout(session_id)
+        return True
+
+    def logout_all(self, user_id: str) -> bool:
+        response = self._admin_request("POST", f"/users/{user_id}/logout")
+        if response.status_code == 404:
+            return False
+        self._ensure_ok(response)
+        return True
+
     def introspect(self, token: str) -> TokenUser | None:
         response = self._send(
             "POST",
@@ -204,7 +232,7 @@ class KeycloakClient:
                 "enabled": True,
                 "emailVerified": False,
                 "requiredActions": ["VERIFY_EMAIL"],
-                "credentials": [{"type": "password", "value": password, "temporary": False}],
+                "credentials": [{"type": "password", "value": password, "temporary": True}],
             },
         )
         if response.status_code == 409:
@@ -232,6 +260,113 @@ class KeycloakClient:
         users = response.json()
         return users[0] if users else None
 
+    def update_interests(self, user_id: str, sport_ids: list[str], team_ids: list[str]) -> dict | None:
+        user = self.get_user(user_id)
+        if user is None:
+            return None
+        attributes = {**user.get("attributes", {}), "sport_ids": sport_ids, "team_ids": team_ids}
+        response = self._admin_request(
+            "PUT", f"/users/{user_id}", json={"username": user["username"], "attributes": attributes}
+        )
+        if response.status_code == 404:
+            return None
+        if response.status_code == 400:
+            raise InvalidUserData
+        self._ensure_ok(response)
+        updated = self.get_user(user_id)
+        if updated is not None:
+            stored = updated.get("attributes", {})
+            if stored.get("sport_ids", []) != sport_ids or stored.get("team_ids", []) != team_ids:
+                raise KeycloakUnavailable("user interests were not persisted")
+        return updated
+
     def send_actions_email(self, user_id: str, actions: list[str]) -> None:
         response = self._admin_request("PUT", f"/users/{user_id}/execute-actions-email", json=actions)
         self._ensure_ok(response)
+
+    def update_user(self, user_id: str, username: str | None = None, email: str | None = None) -> UserUpdate | None:
+        user = self.get_user(user_id)
+        if user is None:
+            return None
+        email_changed = email is not None and email.lower() != user.get("email", "").lower()
+        payload = {}
+        if username is not None:
+            payload["username"] = username
+        if email_changed:
+            payload["email"] = email
+            payload["emailVerified"] = False
+            payload["requiredActions"] = list(dict.fromkeys([*user.get("requiredActions", []), "VERIFY_EMAIL"]))
+        if not payload:
+            return UserUpdate(user=user, email_changed=False)
+        payload.setdefault("username", user["username"])
+
+        response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
+        if response.status_code == 409:
+            message = self._json_field(response, "errorMessage").lower()
+            raise KeycloakConflict("email" if "email" in message else "username")
+        if response.status_code == 400:
+            raise InvalidUserData
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        updated = self.get_user(user_id)
+        return UserUpdate(user=updated, email_changed=email_changed) if updated is not None else None
+
+    def soft_delete_user(self, user_id: str) -> dict:
+        """Disable user and schedule hard deletion in 6 months via custom attribute."""
+        from datetime import datetime, timezone, timedelta
+        user = self.get_user(user_id)
+        if user is None:
+            return None
+        deletion_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
+        payload = {
+            "username": user["username"],
+            "enabled": False,
+            "attributes": {**user.get("attributes", {}), "deletion_scheduled_at": [deletion_at]},
+        }
+        response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
+        if response.status_code == 404:
+            return None
+        self._ensure_ok(response)
+        return self.get_user(user_id)
+
+    def get_users_scheduled_for_deletion(self) -> list[dict]:
+        """Find users with deletion_scheduled_at in the past."""
+        now = datetime.now(timezone.utc)
+        result = []
+        first = 0
+        page_size = 100
+        while True:
+            response = self._admin_request(
+                "GET", "/users",
+                params={"briefRepresentation": "false", "first": first, "max": page_size},
+            )
+            self._ensure_ok(response)
+            users = response.json()
+            for user in users:
+                attributes = user.get("attributes") or {}
+                scheduled = attributes.get("deletion_scheduled_at", [])
+                if not scheduled:
+                    continue
+                try:
+                    if not isinstance(scheduled, list) or len(scheduled) != 1:
+                        raise ValueError("expected one deletion date")
+                    deletion_at = datetime.fromisoformat(scheduled[0])
+                    if deletion_at.tzinfo is None:
+                        raise ValueError("deletion date has no timezone")
+                except (ValueError, TypeError):
+                    logger.warning("Ignoring invalid deletion_scheduled_at for user %s", user.get("id"))
+                    continue
+                if deletion_at <= now:
+                    result.append(user)
+            if len(users) < page_size:
+                return result
+            first += len(users)
+
+    def hard_delete_user(self, user_id: str) -> bool:
+        """Permanently delete user from Keycloak."""
+        response = self._admin_request("DELETE", f"/users/{user_id}")
+        if response.status_code == 404:
+            return False
+        self._ensure_ok(response)
+        return True

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
 
 class RegistrationRequest(BaseModel):
@@ -41,6 +42,18 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
+class UpdateUserResponse(UserResponse):
+    verification_sent: bool | None = None
+
+
+class UserSessionResponse(BaseModel):
+    id: str
+    started_at: datetime
+    last_access_at: datetime
+    ip_address: str | None = None
+    is_current: bool
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1)
 
@@ -57,6 +70,26 @@ class StatusResponse(BaseModel):
     status: str
 
 
-class VerifyResponse(BaseModel):
+class UpdateUserRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=1)
+    email: EmailStr | None = None
+
+
+class DeleteUserResponse(BaseModel):
     status: str
-    is_verified: bool
+    scheduled_deletion_at: datetime | None = None
+
+
+InterestId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+
+
+class UserInterests(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sport_ids: list[InterestId] = Field(max_length=100)
+    team_ids: list[InterestId] = Field(max_length=100)
+
+    @field_validator("sport_ids", "team_ids")
+    @classmethod
+    def unique_ids(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(values))

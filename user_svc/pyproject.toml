@@ -9,4 +9,12 @@ dependencies = [
     "httpx>=0.28",
     "pydantic-settings>=2.6",
     "email-validator>=2.2",
+    "apscheduler>=3.10",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
 ]
