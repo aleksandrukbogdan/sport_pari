@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import keycloak, schemas
@@ -117,6 +117,40 @@ def read_user(
     )
 
 
+@router.get("/users/{user_id}/interests", response_model=schemas.UserInterests)
+def read_user_interests(
+    user_id: str = Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserInterests:
+    user = kc.get_user(user_id)
+    if user is None or not user.get("enabled", False):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    attributes = user.get("attributes", {})
+    return schemas.UserInterests(
+        sport_ids=attributes.get("sport_ids", []),
+        team_ids=attributes.get("team_ids", []),
+    )
+
+
+@router.put("/user/interests", response_model=schemas.UserInterests)
+def update_user_interests(
+    payload: schemas.UserInterests,
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UserInterests:
+    try:
+        user = kc.update_interests(current_user.id, payload.sport_ids, payload.team_ids)
+    except keycloak.InvalidUserData:
+        raise HTTPException(422, detail="invalid interests")
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    attributes = user.get("attributes", {})
+    return schemas.UserInterests(
+        sport_ids=attributes.get("sport_ids", []),
+        team_ids=attributes.get("team_ids", []),
+    )
+
+
 @router.post("/change-password", response_model=schemas.StatusResponse)
 def change_password(
     payload: schemas.ChangePasswordRequest,
@@ -145,27 +179,120 @@ def logout(
     return schemas.StatusResponse(status="ok")
 
 
+@router.get("/user/sessions", response_model=list[schemas.UserSessionResponse])
+def read_user_sessions(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> list[schemas.UserSessionResponse]:
+    sessions = kc.get_user_sessions(current_user.id)
+    if sessions is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    return [
+        schemas.UserSessionResponse(
+            id=session["id"],
+            started_at=datetime.fromtimestamp(session["start"] / 1000, tz=timezone.utc),
+            last_access_at=datetime.fromtimestamp(session["lastAccess"] / 1000, tz=timezone.utc),
+            ip_address=session.get("ipAddress"),
+            is_current=session["id"] == current_user.session_id,
+        )
+        for session in sessions
+    ]
+
+
+@router.delete("/user/sessions/{session_id}", response_model=schemas.StatusResponse)
+def delete_user_session(
+    session_id: str = Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    if not kc.delete_user_session(current_user.id, session_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    return schemas.StatusResponse(status="ok")
+
+
+@router.post("/logout-all", response_model=schemas.StatusResponse)
+def logout_all(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.StatusResponse:
+    if not kc.logout_all(current_user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    return schemas.StatusResponse(status="ok")
+
+
+def _request_actions_email(email: str, action: str, kc: keycloak.KeycloakClient) -> None:
+    try:
+        user = kc.find_user_by_email(email)
+        if user is not None:
+            kc.send_actions_email(user["id"], [action])
+    except keycloak.KeycloakUnavailable:
+        logger.warning("Could not request %s email", action, exc_info=True)
+
+
 @router.post("/reset-password", response_model=schemas.StatusResponse)
 def reset_password(
     payload: schemas.ResetPasswordRequest,
     kc: keycloak.KeycloakClient = Depends(get_keycloak),
 ) -> schemas.StatusResponse:
-    user = kc.find_user_by_email(payload.email)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
-
-    kc.send_actions_email(user["id"], ["UPDATE_PASSWORD"])
+    _request_actions_email(payload.email, "UPDATE_PASSWORD", kc)
     return schemas.StatusResponse(status="ok")
 
 
-@router.post("/send-verify", response_model=schemas.VerifyResponse)
+@router.post("/send-verify", response_model=schemas.StatusResponse)
 def send_verify(
     payload: schemas.SendVerifyRequest,
     kc: keycloak.KeycloakClient = Depends(get_keycloak),
-) -> schemas.VerifyResponse:
-    user = kc.find_user_by_email(payload.email)
+) -> schemas.StatusResponse:
+    _request_actions_email(payload.email, "VERIFY_EMAIL", kc)
+    return schemas.StatusResponse(status="ok")
+
+
+@router.patch("/user", response_model=schemas.UpdateUserResponse)
+def update_user(
+    payload: schemas.UpdateUserRequest,
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.UpdateUserResponse:
+    try:
+        result = kc.update_user(current_user.id, username=payload.username, email=payload.email)
+    except keycloak.KeycloakConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"{exc.field} already registered")
+    except keycloak.InvalidUserData:
+        raise HTTPException(422, detail="invalid user data")
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    user = result.user
+    verification_sent = None
+    if result.email_changed:
+        try:
+            kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
+            verification_sent = True
+        except keycloak.KeycloakUnavailable:
+            verification_sent = False
+            logger.warning("verification email was not sent for user %s", user["id"], exc_info=True)
+
+    return schemas.UpdateUserResponse(
+        id=user["id"],
+        username=user["username"],
+        email=user.get("email", ""),
+        is_verified=bool(user.get("emailVerified", False)),
+        created_at=datetime.fromtimestamp(user["createdTimestamp"] / 1000, tz=timezone.utc),
+        verification_sent=verification_sent,
+    )
+
+
+@router.delete("/user", response_model=schemas.DeleteUserResponse)
+def delete_user(
+    current_user: keycloak.TokenUser = Depends(get_current_user),
+    kc: keycloak.KeycloakClient = Depends(get_keycloak),
+) -> schemas.DeleteUserResponse:
+    user = kc.soft_delete_user(current_user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
 
-    kc.send_actions_email(user["id"], ["VERIFY_EMAIL"])
-    return schemas.VerifyResponse(status="ok", is_verified=bool(user.get("emailVerified", False)))
+    scheduled_at = None
+    if user.get("attributes", {}).get("deletion_scheduled_at"):
+        scheduled_at = datetime.fromisoformat(user["attributes"]["deletion_scheduled_at"][0])
+
+    return schemas.DeleteUserResponse(status="ok", scheduled_deletion_at=scheduled_at)
