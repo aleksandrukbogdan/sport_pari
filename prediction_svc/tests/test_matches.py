@@ -47,3 +47,43 @@ def test_older_version_does_not_change_the_match(monkeypatch) -> None:
         assert match.home_name == "Home"
         assert match.version == 1
         assert as_utc(match.starts_at) == datetime(2026, 10, 12, 18, 0, tzinfo=timezone.utc)
+
+
+def test_earlier_event_does_not_overwrite_a_later_one(monkeypatch) -> None:
+    factory = bind_sqlite(monkeypatch)
+    current = event_payload()
+    current["occurred_at"] = "2026-10-11T12:00:00Z"
+    ingest_sports_event.delay(current).get()
+
+    stale = event_payload("match.updated", home={"id": "home", "name": "Other"})
+    stale["event_id"] = "evt-stale"
+    stale["occurred_at"] = "2026-10-09T12:00:00Z"
+    assert ingest_sports_event.delay(stale).get() == "accepted"
+
+    with factory() as session:
+        match = session.scalar(select(Match).where(Match.external_id == "match-1"))
+        assert match is not None
+        assert match.home_name == "Home"
+
+
+def test_finished_event_updates_score_status_and_outcome(monkeypatch) -> None:
+    factory = bind_sqlite(monkeypatch)
+    ingest_sports_event.delay(event_payload()).get()
+
+    finished = event_payload(
+        "match.finished",
+        status="finished",
+        score={"home": 2, "away": 1},
+        outcome="home",
+    )
+    finished["event_id"] = "evt-finished"
+    finished["occurred_at"] = "2026-10-12T20:00:00Z"
+    assert ingest_sports_event.delay(finished).get() == "recorded"
+
+    with factory() as session:
+        match = session.scalar(select(Match).where(Match.external_id == "match-1"))
+        assert match is not None
+        assert match.status == MatchStatus.finished
+        assert match.score_home == 2
+        assert match.score_away == 1
+        assert match.outcome.value == "home"
