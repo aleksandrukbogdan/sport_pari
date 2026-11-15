@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from uuid import uuid4
 
 from app.schemas import Match
@@ -19,13 +20,13 @@ def create_event(match: Match, event_type: str):
     }
 
     if event_type == "match.started":
-        #Фактическое время начала хранится отдельно от планового
+        # Фактическое время начала хранится отдельно от планового
         event["started_at"] = event["occurred_at"]
 
     if event_type in ["match.score_changed", "match.finished", "match.result_corrected"]:
         event["score"] = match.score.model_dump()
 
-    #Победителя определяем только по окончательному результату
+    # Победителя определяем только по окончательному результату
     if event_type in ["match.finished", "match.result_corrected"]:
         if match.score.home > match.score.away:
             event["outcome"] = "home"

@@ -1,10 +1,14 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi import Query
 from psycopg.errors import UniqueViolation
 
 from app import database
-from app.schemas import Match, Score
-from app.statistics import team_statistics, standings
 from app.events import create_event
+from app.schemas import Match
+from app.schemas import Score
+from app.statistics import standings
+from app.statistics import team_statistics
 
 app = FastAPI(title="Sports Service")
 
@@ -49,10 +53,7 @@ def add_match(new_match: Match):
     try:
         database.insert_match(new_match, event)
     except UniqueViolation:
-        raise HTTPException(
-            status_code=409,
-            detail="Такой номер матча уже есть"
-        )
+        raise HTTPException(status_code=409, detail="Такой номер матча уже есть")
 
     return new_match
 
@@ -63,10 +64,7 @@ def get_team_statistics(team_id: int, season_id: int = Query(gt=0)):
     result = team_statistics(matches, team_id, season_id)
 
     if result is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Команда не найдена в этом сезоне"
-        )
+        raise HTTPException(status_code=404, detail="Команда не найдена в этом сезоне")
 
     return result
 
@@ -96,16 +94,9 @@ def start_match(match_id: int):
     match = get_match(match_id)
 
     if match.status != "scheduled":
-        raise HTTPException(
-            status_code=409,
-            detail="Начать можно только запланированный матч"
-        )
+        raise HTTPException(status_code=409, detail="Начать можно только запланированный матч")
 
-    return save_match_change(
-        match,
-        {"status": "live", "score": {"home": 0, "away": 0}},
-        "match.started"
-    )
+    return save_match_change(match, {"status": "live", "score": {"home": 0, "away": 0}}, "match.started")
 
 
 @app.post("/matches/{match_id}/score", response_model=Match)
@@ -113,19 +104,12 @@ def update_score(match_id: int, score: Score):
     match = get_match(match_id)
 
     if match.status != "live":
-        raise HTTPException(
-            status_code=409,
-            detail="Менять счёт можно только во время матча"
-        )
+        raise HTTPException(status_code=409, detail="Менять счёт можно только во время матча")
 
     if match.score == score:
         return match
 
-    return save_match_change(
-        match,
-        {"score": score.model_dump()},
-        "match.score_changed"
-    )
+    return save_match_change(match, {"score": score.model_dump()}, "match.score_changed")
 
 
 @app.post("/matches/{match_id}/finish", response_model=Match)
@@ -133,16 +117,9 @@ def finish_match(match_id: int, score: Score):
     match = get_match(match_id)
 
     if match.status != "live":
-        raise HTTPException(
-            status_code=409,
-            detail="Завершить можно только начатый матч"
-        )
+        raise HTTPException(status_code=409, detail="Завершить можно только начатый матч")
 
-    return save_match_change(
-        match,
-        {"status": "finished", "score": score.model_dump()},
-        "match.finished"
-    )
+    return save_match_change(match, {"status": "finished", "score": score.model_dump()}, "match.finished")
 
 
 @app.post("/matches/{match_id}/cancel", response_model=Match)
@@ -150,16 +127,9 @@ def cancel_match(match_id: int):
     match = get_match(match_id)
 
     if match.status not in ["scheduled", "live"]:
-        raise HTTPException(
-            status_code=409,
-            detail="Этот матч уже завершён или отменён"
-        )
+        raise HTTPException(status_code=409, detail="Этот матч уже завершён или отменён")
 
-    return save_match_change(
-        match,
-        {"status": "cancelled"},
-        "match.cancelled"
-    )
+    return save_match_change(match, {"status": "cancelled"}, "match.cancelled")
 
 
 @app.post("/matches/{match_id}/correct-result", response_model=Match)
@@ -167,22 +137,14 @@ def correct_result(match_id: int, score: Score):
     match = get_match(match_id)
 
     if match.status != "finished":
-        raise HTTPException(
-            status_code=409,
-            detail="Исправить можно только завершённый матч"
-        )
+        raise HTTPException(status_code=409, detail="Исправить можно только завершённый матч")
 
     if match.score == score:
         raise HTTPException(status_code=409, detail="Счёт не изменился")
 
-    return save_match_change(
-        match,
-        {"score": score.model_dump()},
-        "match.result_corrected"
-    )
+    return save_match_change(match, {"score": score.model_dump()}, "match.result_corrected")
 
 
 @app.get("/events")
 def list_events():
-    #Читаем события из базы. Отправки в Kafka пока нет
     return database.read_events()

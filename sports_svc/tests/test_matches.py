@@ -32,10 +32,7 @@ class MatchTests(DatabaseTestCase):
 
         response = self.client.post("/matches", json=data)
         self.assertEqual(response.status_code, 422)
-        self.assertEqual(
-            self.client.get("/matches/10").status_code,
-            404
-        )
+        self.assertEqual(self.client.get("/matches/10").status_code, 404)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,24 @@
 import unittest
 
+from app.sample_data import MATCHES
+from app.schemas import Match
+from app.statistics import standings
+from app.statistics import team_statistics
+from db_case import DatabaseTestCase
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.sample_data import MATCHES
-from app.schemas import Match
-from app.statistics import team_statistics, standings
-
-from db_case import DatabaseTestCase
 
 
 def test_match(number, home, away, home_score, away_score, status="finished", season=1):
-    #создаем вымышленный матч для проверки расчётов
+    # создаем вымышленный матч для проверки расчётов
     return Match(
-        match_id=number, season_id=season,
+        match_id=number,
+        season_id=season,
         home={"id": home, "name": f"Команда {home}"},
         away={"id": away, "name": f"Команда {away}"},
-        starts_at="2026-10-01T15:00:00Z", status=status,
+        starts_at="2026-10-01T15:00:00Z",
+        status=status,
         score={"home": home_score, "away": away_score},
     )
 
@@ -47,9 +49,14 @@ class StatisticsTests(DatabaseTestCase):
         self.assertEqual(result["points"], 3)
 
     def test_scheduled_team_has_zero_statistics(self):
-        match = Match(match_id=1, season_id=1,
-                      home={"id": 1, "name": "А"}, away={"id": 2, "name": "Б"},
-                      starts_at="2026-11-01T15:00:00Z", status="scheduled")
+        match = Match(
+            match_id=1,
+            season_id=1,
+            home={"id": 1, "name": "А"},
+            away={"id": 2, "name": "Б"},
+            starts_at="2026-11-01T15:00:00Z",
+            status="scheduled",
+        )
         self.assertEqual(team_statistics([match], 1, 1)["played"], 0)
         self.assertIsNone(team_statistics([match], 99, 1))
 

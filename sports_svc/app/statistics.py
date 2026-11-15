@@ -2,7 +2,7 @@ from app.schemas import Match
 
 
 def team_statistics(matches: list[Match], team_id: int, season_id: int):
-    #поиск команды среди матчей выбранного сезона
+    # поиск команды среди матчей выбранного сезона
     team = None
     for match in matches:
         if match.season_id != season_id:
@@ -30,11 +30,11 @@ def team_statistics(matches: list[Match], team_id: int, season_id: int):
     }
 
     for match in matches:
-        #подсчет только завершённые матчи нужного сезона
+        # подсчет только завершённые матчи нужного сезона
         if match.season_id != season_id or match.status != "finished":
             continue
 
-        #для гостей забитые и пропущенные голы меняются местами
+        # для гостей забитые и пропущенные голы меняются местами
         if match.home.id == team_id:
             scored = match.score.home
             conceded = match.score.away
@@ -61,7 +61,7 @@ def team_statistics(matches: list[Match], team_id: int, season_id: int):
 
 
 def standings(matches: list[Match], season_id: int):
-    #собираются номера команд без повторений
+    # собираются номера команд без повторений
     team_ids = set()
     for match in matches:
         if match.season_id == season_id:
@@ -72,7 +72,7 @@ def standings(matches: list[Match], season_id: int):
     for team_id in team_ids:
         table.append(team_statistics(matches, team_id, season_id))
 
-    #больше очков, разница голов и забитые голы — выше место. При полном равенстве используем номер команды для стабильного порядка.
+    # больше очков, разница голов и забитые голы — выше место. При полном равенстве используем номер команды для стабильного порядка.
     table.sort(key=table_order)
     for position, row in enumerate(table, start=1):
         row["position"] = position

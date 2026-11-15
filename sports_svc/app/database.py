@@ -12,15 +12,12 @@ class MatchChangedError(Exception):
 
 
 def get_connection():
-    address = os.getenv(
-        "SPORTS_DATABASE_URL",
-        "postgresql://sports:sports_local@127.0.0.1:5433/sports"
-    )
+    address = os.getenv("SPORTS_DATABASE_URL", "postgresql://sports:sports_local@127.0.0.1:5433/sports")
     return psycopg.connect(address, connect_timeout=5)
 
 
 def init_db():
-    #При ошибке изменения этой операции отменяются
+    # При ошибке изменения этой операции отменяются
     with get_connection() as connection:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS matches (
@@ -37,34 +34,27 @@ def init_db():
             )
         """)
 
-        count = connection.execute(
-            "SELECT COUNT(*) FROM matches"
-        ).fetchone()[0]
+        count = connection.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
 
-        #Исходные матчи добавляем только в пустую таблицу
+        # Исходные матчи добавляем только в пустую таблицу
         if count == 0:
             for match in MATCHES:
                 connection.execute(
                     "INSERT INTO matches (match_id, data) VALUES (%s, %s)",
-                    (match.match_id, Jsonb(match.model_dump(mode="json")))
+                    (match.match_id, Jsonb(match.model_dump(mode="json"))),
                 )
 
 
 def read_matches():
     with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT data FROM matches ORDER BY match_id"
-        ).fetchall()
+        rows = connection.execute("SELECT data FROM matches ORDER BY match_id").fetchall()
 
     return [Match.model_validate(row[0]) for row in rows]
 
 
 def read_match(match_id: int):
     with get_connection() as connection:
-        row = connection.execute(
-            "SELECT data FROM matches WHERE match_id = %s",
-            (match_id,)
-        ).fetchone()
+        row = connection.execute("SELECT data FROM matches WHERE match_id = %s", (match_id,)).fetchone()
 
     if row is None:
         return None
@@ -73,49 +63,47 @@ def read_match(match_id: int):
 
 
 def insert_event(connection, event: dict):
-    connection.execute(
-        "INSERT INTO events (event_id, data) VALUES (%s, %s)",
-        (event["event_id"], Jsonb(event))
-    )
+    connection.execute("INSERT INTO events (event_id, data) VALUES (%s, %s)", (event["event_id"], Jsonb(event)))
 
 
 def insert_match(match: Match, event: dict | None):
-    #Матч и событие сохраняем вместе
+    # Матч и событие сохраняем вместе
     with get_connection() as connection:
         connection.execute(
             "INSERT INTO matches (match_id, data) VALUES (%s, %s)",
-            (match.match_id, Jsonb(match.model_dump(mode="json")))
+            (match.match_id, Jsonb(match.model_dump(mode="json"))),
         )
 
         if event is not None:
             insert_event(connection, event)
+
+    if event is not None:
+        from app.kafka_bus import publish_event
+
+        publish_event(event)
 
 
 def update_match(old_match: Match, new_match: Match, event: dict):
     with get_connection() as connection:
         cursor = connection.execute(
             "UPDATE matches SET data = %s WHERE match_id = %s AND data = %s",
-            (
-                Jsonb(new_match.model_dump(mode="json")),
-                old_match.match_id,
-                Jsonb(old_match.model_dump(mode="json"))
-            )
+            (Jsonb(new_match.model_dump(mode="json")), old_match.match_id, Jsonb(old_match.model_dump(mode="json"))),
         )
 
-        #Проверяем, не изменил ли матч другой запрос
+        # Проверяем, не изменил ли матч другой запрос
         if cursor.rowcount == 0:
-            raise MatchChangedError(
-                "Матч уже изменился. Получите его заново."
-            )
+            raise MatchChangedError("Матч уже изменился. Получите его заново.")
 
         insert_event(connection, event)
+
+    from app.kafka_bus import publish_event
+
+    publish_event(event)
 
 
 def read_events():
     with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT data FROM events ORDER BY number"
-        ).fetchall()
+        rows = connection.execute("SELECT data FROM events ORDER BY number").fetchall()
 
     return [row[0] for row in rows]
 
