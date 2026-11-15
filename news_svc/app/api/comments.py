@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Query
 
-from app.api.deps import CommentRepo, CurrentUserId
+from app.api.deps import CommentRepo
+from app.api.deps import CurrentUserId
 from app.comments.models import Comment
-from app.comments.schemas import CommentCreate, CommentRead
+from app.comments.schemas import CommentCreate
+from app.comments.schemas import CommentRead
 
 router = APIRouter()
 

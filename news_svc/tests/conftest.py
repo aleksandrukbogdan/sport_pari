@@ -5,9 +5,11 @@ _db_path = os.path.join(tempfile.gettempdir(), "news_svc_pytest.sqlite")
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_db_path}"
 
 import pytest  # noqa: E402
-from httpx import ASGITransport, AsyncClient  # noqa: E402
+from app.db import Base  # noqa: E402
+from app.db import engine  # noqa: E402
+from httpx import ASGITransport  # noqa: E402
+from httpx import AsyncClient  # noqa: E402
 
-from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 

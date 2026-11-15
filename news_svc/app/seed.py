@@ -1,7 +1,10 @@
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.news.models import News

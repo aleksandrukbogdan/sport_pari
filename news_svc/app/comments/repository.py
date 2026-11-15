@@ -16,9 +16,7 @@ class PostgresCommentRepository:
         self.session = session
 
     async def _require_published(self, news_id: int) -> None:
-        exists = await self.session.scalar(
-            select(News.id).where(News.id == news_id, News.published_at.is_not(None))
-        )
+        exists = await self.session.scalar(select(News.id).where(News.id == news_id, News.published_at.is_not(None)))
         if exists is None:
             raise NewsNotFound
 
