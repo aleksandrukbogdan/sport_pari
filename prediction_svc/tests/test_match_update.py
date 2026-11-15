@@ -1,12 +1,14 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from sqlalchemy import func, select
-
-from app.models import Match
 from app.tasks import ingest_sports_event
+from sqlalchemy import func
+from sqlalchemy import select
 from tests.test_events import event_payload
 from tests.test_ingest import bind_sqlite
 from tests.test_matches import as_utc
+
+from app.models import Match
 
 
 def test_update_moves_kickoff_and_replay_does_not_duplicate_the_match(monkeypatch) -> None:

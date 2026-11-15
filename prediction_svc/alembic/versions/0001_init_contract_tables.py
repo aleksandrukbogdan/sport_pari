@@ -6,15 +6,15 @@ Create Date: 2026-10-04
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0001_init"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 match_status = sa.Enum(
     "scheduled",
@@ -25,12 +25,8 @@ match_status = sa.Enum(
     native_enum=False,
     length=32,
 )
-match_outcome = sa.Enum(
-    "home", "draw", "away", name="match_outcome", native_enum=False, length=16
-)
-prediction_pick = sa.Enum(
-    "home", "draw", "away", name="prediction_pick", native_enum=False, length=16
-)
+match_outcome = sa.Enum("home", "draw", "away", name="match_outcome", native_enum=False, length=16)
+prediction_pick = sa.Enum("home", "draw", "away", name="prediction_pick", native_enum=False, length=16)
 prediction_status = sa.Enum(
     "open",
     "locked",

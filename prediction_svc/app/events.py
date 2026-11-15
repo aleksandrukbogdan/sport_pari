@@ -2,9 +2,12 @@ import enum
 from datetime import datetime
 from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel
+from pydantic import Field
+from pydantic import model_validator
 
-from app.models import MatchStatus, Outcome
+from app.models import MatchStatus
+from app.models import Outcome
 
 
 class EventType(enum.StrEnum):

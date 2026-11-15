@@ -1,15 +1,16 @@
 import json
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from app.celery_app import celery_app
 from app.consumer import handle_message
 from app.db import Base
-from app.models import Match, ProcessedEvent
 from app.tasks import ingest_sports_event
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from tests.test_events import event_payload
+
+from app.models import Match
+from app.models import ProcessedEvent
 
 
 def bind_sqlite(monkeypatch):

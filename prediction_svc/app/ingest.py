@@ -1,6 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.events import EventType
 from app.events import SportsEvent
 from app.matches import SCHEDULE_EVENTS, upsert_match
 from app.models import ProcessedEvent
@@ -26,7 +27,10 @@ def store_event(session: Session, payload: dict) -> str:
     if not record_event(session, event):
         return "skipped"
 
-    upsert_match(session, event)
+    upserted = upsert_match(session, event)
+    if upserted is None and event.event_type in {EventType.finished, EventType.result_corrected}:
+        session.rollback()
+        return "wait"
     apply_match_facts(session, event)
     try:
         session.commit()

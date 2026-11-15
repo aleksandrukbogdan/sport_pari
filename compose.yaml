@@ -1,0 +1,307 @@
+name: sport-pari
+
+services:
+  vault:
+    image: hashicorp/vault:1.18
+    command: ["vault", "server", "-config=/vault/local/config.hcl"]
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    volumes:
+      - ./user_svc/deploy/vault/config.hcl:/vault/local/config.hcl:ro
+      - vault-data:/vault/file
+    restart: unless-stopped
+
+  vault-bootstrap:
+    image: hashicorp/vault:1.18
+    profiles: ["bootstrap"]
+    entrypoint: ["/bin/sh", "/scripts/bootstrap.sh"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - ./user_svc/deploy/vault:/scripts:ro
+      - ./user_svc/deploy/vault/state:/state
+    depends_on:
+      - vault
+    stdin_open: true
+    tty: true
+
+  vault-init:
+    image: hashicorp/vault:1.18
+    entrypoint: ["/bin/sh", "/scripts/init.sh"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      APP_ENV: test
+    volumes:
+      - ./user_svc/deploy/vault:/scripts:ro
+      - ./user_svc/deploy/vault/state:/state:ro
+      - user-secrets:/secrets
+    depends_on:
+      - vault
+    restart: "no"
+
+  user-postgres:
+    image: postgres:16-alpine
+    entrypoint: ["sh", "-c", ". /secrets/runtime.env && exec docker-entrypoint.sh postgres"]
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+    volumes:
+      - keycloak-db:/var/lib/postgresql/data
+      - user-secrets:/secrets:ro
+    depends_on:
+      vault-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    entrypoint: ["/bin/bash", "-c", ". /secrets/runtime.env && exec /opt/keycloak/bin/kc.sh start-dev --import-realm"]
+    environment:
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:18080
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://user-postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./user_svc/deploy/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - user-secrets:/secrets:ro
+    depends_on:
+      user-postgres:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  keycloak-sync:
+    image: python:3.12-slim
+    command: ["python", "-u", "/app/sync.py"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: test
+      VAULT_ADDR: http://vault:8200
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: sport-pari
+      SYNC_INTERVAL: "30"
+      EVENTS_INTERVAL: "10"
+      EVENTS_WINDOW: "3600"
+    volumes:
+      - ./user_svc/deploy/keycloak/sync.py:/app/sync.py:ro
+      - ./user_svc/deploy/keycloak/realm-export.json:/app/realm-export.json:ro
+      - ./user_svc/deploy/vault/state:/state:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+
+  user-api:
+    build:
+      context: ./user_svc
+      dockerfile: deploy/Dockerfile
+    command: ["sh", "-c", ". /secrets/runtime.env && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8001:8000"
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: sport-pari
+      KEYCLOAK_CLIENT_ID: user-svc
+      POSTGRES_HOST: user-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      RUN_SCHEDULER: "false"
+    volumes:
+      - user-secrets:/secrets:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+
+  news-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: news
+      POSTGRES_PASSWORD: news
+      POSTGRES_DB: news
+    volumes:
+      - news-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news -d news"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  news-api:
+    build:
+      context: ./news_svc
+      dockerfile: deploy/Dockerfile
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8002:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://news:news@news-postgres:5432/news
+      USER_SERVICE_URL: http://user-api:8000
+    depends_on:
+      news-postgres:
+        condition: service_healthy
+
+  sports-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: sports
+      POSTGRES_USER: sports
+      POSTGRES_PASSWORD: sports_local
+    volumes:
+      - sports-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sports -d sports"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+  sports-api:
+    build: ./sports_svc
+    ports:
+      - "8003:8000"
+    environment:
+      SPORTS_DATABASE_URL: postgresql://sports:sports_local@sports-db:5432/sports
+      SPORTS_SEED_EVENTS: "1"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: sports.matches
+    depends_on:
+      sports-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    restart: unless-stopped
+
+  prediction-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: prediction
+      POSTGRES_PASSWORD: prediction
+      POSTGRES_DB: prediction
+    volumes:
+      - prediction-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prediction -d prediction"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  prediction-api:
+    build: ./prediction_svc
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8004:8000"
+    environment: &prediction-env
+      DATABASE_URL: postgresql+psycopg://prediction:prediction@prediction-postgres:5432/prediction
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: sports.matches
+      KAFKA_GROUP_ID: prediction-notify
+      CORS_ORIGINS: http://localhost:3000
+      ADMIN_USER_IDS: admin
+    depends_on:
+      prediction-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prediction-worker:
+    build: ./prediction_svc
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    environment: *prediction-env
+    depends_on:
+      prediction-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prediction-consumer:
+    build: ./prediction_svc
+    command: ["python", "-m", "app.consumer"]
+    environment: *prediction-env
+    depends_on:
+      prediction-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      prediction-worker:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      USER_API_URL: http://user-api:8000
+      NEWS_API_URL: http://news-api:8000
+      SPORTS_API_URL: http://sports-api:8000
+      PREDICTION_API_URL: http://prediction-api:8000
+      DATA_MODE: api
+    depends_on:
+      - news-api
+      - sports-api
+      - prediction-api
+    restart: unless-stopped
+
+volumes:
+  vault-data:
+  user-secrets:
+  keycloak-db:
+  news-pg:
+  sports-data:
+  prediction-pg:
