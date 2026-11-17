@@ -173,3 +173,39 @@ def test_cancelled_match_withdraws_the_question() -> None:
     assert question.status_code == 200
     assert listed["status"] == "withdrawn"
     assert listed["factual_outcome"] is None
+
+
+def test_question_page_returns_the_callers_choice() -> None:
+    api = client()
+    created = api.post(
+        "/questions",
+        headers=bearer("admin"),
+        json={"title": "Перейдёт ли драфт?", "kind": "event"},
+    )
+    question_id = created.json()["id"]
+    api.post(f"/questions/{question_id}/votes", headers=bearer("user-1"), json={"choice": "yes"})
+
+    hidden = api.get(f"/questions/{question_id}")
+    mine = api.get(f"/questions/{question_id}", headers=bearer("user-1"))
+    missing = api.get("/questions/00000000-0000-0000-0000-000000000000")
+
+    assert hidden.status_code == 200
+    assert hidden.json()["my_choice"] is None
+    assert mine.json()["my_choice"] == "yes"
+    assert missing.status_code == 404
+
+
+def test_admin_flag_accepts_preferred_username() -> None:
+    api = client()
+    guest = api.get("/me", headers=bearer("user-1", username="student"))
+    admin = api.get("/me", headers=bearer("11111111-1111-1111-1111-111111111111", username="admin"))
+    created = api.post(
+        "/questions",
+        headers=bearer("11111111-1111-1111-1111-111111111111", username="admin"),
+        json={"title": "Перейдёт ли драфт?", "kind": "event"},
+    )
+
+    assert guest.status_code == 200
+    assert guest.json() == {"sub": "user-1", "preferred_username": "student", "is_admin": False}
+    assert admin.json()["is_admin"] is True
+    assert created.status_code == 201

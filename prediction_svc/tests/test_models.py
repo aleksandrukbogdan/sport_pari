@@ -1,12 +1,18 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 import pytest
-from sqlalchemy import create_engine, inspect
+from app.db import Base
+from sqlalchemy import create_engine
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db import Base
-from app.models import Match, MatchStatus, Outcome, PredictionStatus, UserPrediction
+from app.models import Match
+from app.models import MatchStatus
+from app.models import Outcome
+from app.models import PredictionStatus
+from app.models import UserPrediction
 
 
 def test_contract_tables_cover_match_copy_and_events() -> None:

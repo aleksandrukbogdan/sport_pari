@@ -45,6 +45,17 @@ def list_questions(session: Session, kind: QuestionKind | None) -> list[Question
     return list(session.scalars(query).all())
 
 
+def latest_choice(session: Session, question_id, user_id: str) -> VoteChoice | None:
+    cast = session.scalar(
+        select(VoteCast)
+        .where(VoteCast.question_id == question_id, VoteCast.user_id == user_id)
+        .order_by(VoteCast.id.desc())
+    )
+    if cast is None:
+        return None
+    return cast.choice
+
+
 def casts_for(session: Session, question_id) -> list[VoteCast]:
     return list(
         session.scalars(select(VoteCast).where(VoteCast.question_id == question_id).order_by(VoteCast.id)).all()

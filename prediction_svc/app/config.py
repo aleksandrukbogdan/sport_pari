@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     kafka_group_id: str = "prediction-notify"
     sports_events_url: str = "http://localhost:8000/events"
     admin_user_ids: str = "admin"
+    cors_origins: str = "http://localhost:3000"
 
 
 @lru_cache

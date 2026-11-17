@@ -21,6 +21,8 @@ class PostgresCommentRepository:
         exists = await self.session.scalar(
             select(News.id).where(News.id == news_id, News.published_at <= datetime.now(UTC))
         )
+        exists = await self.session.scalar(select(News.id).where(News.id == news_id, News.published_at.is_not(None)))
+
         if exists is None:
             raise NewsNotFound
 

@@ -1,7 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Query
 
 from app.api.deps import NewsRepo
-from app.news.schemas import NewsCard, NewsDetail
+from app.news.schemas import NewsCard
+from app.news.schemas import NewsDetail
 
 router = APIRouter()
 

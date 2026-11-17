@@ -6,15 +6,15 @@ Create Date: 2026-10-25
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0002_questions"
-down_revision: Union[str, None] = "0001_init"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0001_init"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 question_kind = sa.Enum("match", "event", name="question_kind", native_enum=False, length=16)
 vote_choice = sa.Enum("yes", "no", name="vote_choice", native_enum=False, length=8)

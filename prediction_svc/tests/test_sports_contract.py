@@ -2,13 +2,13 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
-
 from app.events import SportsEvent
 from app.ingest import store_event
-from app.models import ProcessedEvent
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from tests.test_ingest import bind_sqlite
+
+from app.models import ProcessedEvent
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -43,6 +43,7 @@ def test_event_id_conflict_on_commit_is_skipped(monkeypatch) -> None:
     event_id = payload["event_id"]
 
     with factory() as session:
+
         def lose_the_race() -> None:
             winner = factory()
             winner.add(
@@ -66,6 +67,7 @@ def test_other_integrity_error_is_not_reported_as_a_duplicate(monkeypatch) -> No
     payload = load_fixture("sports_scheduled.json")
 
     with factory() as session:
+
         def fail_on_another_constraint() -> None:
             raise IntegrityError("INSERT", {}, Exception("matches_external_id_key"))
 

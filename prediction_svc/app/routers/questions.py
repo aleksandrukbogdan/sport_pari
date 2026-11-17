@@ -7,7 +7,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
-from app.auth import subject_from_bearer
+from app.auth import TokenIdentity
+from app.auth import identity_from_bearer
+from app.auth import is_admin
 from app.config import get_settings
 from app.db import get_db
 from app.models import Question, QuestionKind, VoteChoice
@@ -19,6 +21,7 @@ from app.voting import (
     chart,
     close_question,
     create_question,
+    latest_choice,
     list_questions,
     match_copy,
     yes_share,
@@ -60,6 +63,7 @@ class QuestionView(BaseModel):
     yes: int
     no: int
     yes_share: float | None
+    my_choice: VoteChoice | None = None
 
 
 class ChartPoint(BaseModel):
@@ -77,23 +81,38 @@ class ChartView(BaseModel):
     points: list[ChartPoint]
 
 
-def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+class MeView(BaseModel):
+    sub: str
+    preferred_username: str | None
+    is_admin: bool
+
+
+def optional_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str | None:
+    if credentials is None:
+        return None
+    return require_identity(credentials).sub
+
+
+def require_identity(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> TokenIdentity:
     if credentials is None:
         raise HTTPException(status_code=401, detail="missing bearer token")
     try:
-        return subject_from_bearer(credentials.credentials)
+        return identity_from_bearer(credentials.credentials)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
-def require_admin(user_id: str = Depends(require_user)) -> str:
-    admins = {item.strip() for item in get_settings().admin_user_ids.split(",") if item.strip()}
-    if user_id not in admins:
+def require_user(identity: TokenIdentity = Depends(require_identity)) -> str:
+    return identity.sub
+
+
+def require_admin(identity: TokenIdentity = Depends(require_identity)) -> str:
+    if not is_admin(identity, get_settings().admin_user_ids):
         raise HTTPException(status_code=403, detail="admin only")
-    return user_id
+    return identity.sub
 
 
-def view_question(session: Session, question: Question) -> QuestionView:
+def view_question(session: Session, question: Question, user_id: str | None = None) -> QuestionView:
     yes, no, _points = chart(casts_for(session, question.id))
     match = match_copy(session, question.match_external_id)
     return QuestionView(
@@ -110,6 +129,7 @@ def view_question(session: Session, question: Question) -> QuestionView:
         yes=yes,
         no=no,
         yes_share=yes_share(yes, no),
+        my_choice=None if user_id is None else latest_choice(session, question.id, user_id),
     )
 
 
@@ -129,9 +149,22 @@ def post_question(
 @router.get("", response_model=list[QuestionView])
 def get_questions(
     kind: QuestionKind | None = None,
+    user_id: str | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> list[QuestionView]:
-    return [view_question(session, question) for question in list_questions(session, kind)]
+    return [view_question(session, question, user_id) for question in list_questions(session, kind)]
+
+
+@router.get("/{question_id}", response_model=QuestionView)
+def get_question(
+    question_id: uuid.UUID,
+    user_id: str | None = Depends(optional_user),
+    session: Session = Depends(get_db),
+) -> QuestionView:
+    question = session.get(Question, question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="question not found")
+    return view_question(session, question, user_id)
 
 
 @router.post("/{question_id}/close", response_model=QuestionView)
@@ -160,7 +193,7 @@ def post_vote(
     if result == "closed":
         raise HTTPException(status_code=409, detail="voting is closed")
     question = session.get(Question, question_id)
-    return view_question(session, question)
+    return view_question(session, question, user_id)
 
 
 @router.get("/{question_id}/chart", response_model=ChartView)

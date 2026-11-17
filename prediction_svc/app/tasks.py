@@ -11,11 +11,14 @@ def ingest_payload(payload: dict, session: Session) -> str:
     return store_event(session, payload)
 
 
-@celery_app.task(name="ingest_sports_event")
-def ingest_sports_event(payload: dict) -> str:
+@celery_app.task(name="ingest_sports_event", bind=True, max_retries=8)
+def ingest_sports_event(self, payload: dict) -> str:
     session = get_session_factory()()
     try:
-        return ingest_payload(payload, session)
+        result = ingest_payload(payload, session)
+        if result == "wait":
+            raise self.retry(countdown=2)
+        return result
     finally:
         session.close()
 

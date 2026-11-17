@@ -1,7 +1,6 @@
 import pytest
-from pydantic import ValidationError
-
 from app.events import SportsEvent
+from pydantic import ValidationError
 
 
 def match_payload(**overrides) -> dict:
