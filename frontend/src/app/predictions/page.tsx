@@ -12,7 +12,7 @@ export default async function PredictionsPage({ searchParams }: { searchParams: 
   return (
     <div className="stack">
       <PageTitle title="Прогнозы">
-        <p className="muted">Ответ «да» или «нет» — учебный прогноз. Доля голосов не является вероятностью.</p>
+        <p className="lead">Ответьте «да» или «нет». Шкала на странице вопроса — распределение ответов участников, а не вероятность исхода.</p>
       </PageTitle>
       <div className="tabs">
         <Link href="/predictions" aria-current={!kind ? "page" : undefined}>Все</Link>

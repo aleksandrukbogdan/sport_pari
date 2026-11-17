@@ -33,7 +33,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ id: s
         </div>
       ) : null}
       <section className="surface stack">
-        {viewer ? <VoteForm question={item} demo={viewer.demo || question.demo} /> : <p><Link href={`/login?next=/predictions/${id}`}>Войдите, чтобы отправить прогноз.</Link></p>}
+        {viewer ? <VoteForm question={item} demo={viewer.demo || question.demo} /> : <Link className="button primary" href={`/login?next=/predictions/${id}`}>Войти, чтобы отправить прогноз</Link>}
         {item.status !== "open" ? <p>Голосование закрыто.</p> : null}
         <VoteShare yes={item.yes} no={item.no} share={item.yes_share} />
         <OutcomeNote outcome={item.factual_outcome} />

@@ -8,7 +8,7 @@ export default function RegisterPage() {
   return (
     <div className="stack">
       <PageTitle title="Регистрация">
-        <p className="muted">Учётную запись создаёт сервис пользователей в Keycloak.</p>
+        <p className="lead">Создайте учётную запись, чтобы отвечать на вопросы и обсуждать разбор. Пароль хранит сервис пользователей.</p>
       </PageTitle>
       <AuthForm mode="register" nextPath="/" demo={isDemo()} />
       <p>Уже есть вход? <Link href="/login">Войти</Link></p>

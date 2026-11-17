@@ -5,6 +5,9 @@ export type NewsCard = {
   sport_id: string;
   published_at: string;
   comments_count: number;
+  source_name?: string | null;
+  source_url?: string | null;
+  image_url?: string | null;
 };
 
 export type NewsDetail = NewsCard & { body: string };

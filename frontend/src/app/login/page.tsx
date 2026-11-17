@@ -10,7 +10,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div className="stack">
       <PageTitle title="Вход">
-        <p className="muted">Пароль проверяет сервис пользователей. Отдельного хранилища в интерфейсе нет.</p>
+        <p className="lead">Войдите, чтобы сохранить свой прогноз и комментарий к разбору. Пароль проверяет сервис пользователей.</p>
       </PageTitle>
       <AuthForm mode="login" nextPath={nextPath} demo={isDemo()} />
       <p>Нет учётной записи? <Link href="/register">Регистрация</Link></p>

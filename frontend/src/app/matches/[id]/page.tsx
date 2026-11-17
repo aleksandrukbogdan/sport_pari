@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { MatchCard } from "@/modules/cards";
 import { loadHeadToHead, loadMatch, loadQuestions, loadTeamStats } from "@/shared/server-api";
-import { Breadcrumbs, EmptyState, ErrorState, PageTitle } from "@/shared/ui";
+import { Breadcrumbs, EmptyState, ErrorState, PageTitle, WhenText } from "@/shared/ui";
 
 export default async function MatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -42,7 +42,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       <section>
         <h2 className="section-title">Связанные вопросы</h2>
         {related.length === 0 ? <EmptyState title="Связанных вопросов нет" text="Вопрос появится здесь, если он создан для этого матча." /> : (
-          <ul>{related.map((item) => <li key={item.id}><Link href={`/predictions/${item.id}`}>{item.title}</Link></li>)}</ul>
+          <ul className="related">{related.map((item) => <li key={item.id}><Link href={`/predictions/${item.id}`}>{item.title}</Link></li>)}</ul>
         )}
       </section>
     </div>
@@ -58,13 +58,13 @@ function StatsBlock({ title, result }: { title: string; result: Awaited<ReturnTy
       <h3 className="card-title">{title}</h3>
       <p>Игры {row.played}, победы {row.wins}, ничьи {row.draws}, поражения {row.losses}.</p>
       <p>Мячи {row.goals_for}:{row.goals_against}, очки {row.points}.</p>
-      {row.recent_form && (
-        <p className="meta">
-          Последние игры (сначала свежие): {row.recent_form.length
-            ? row.recent_form.map((outcome) => labels[outcome]).join(" · ")
-            : "нет завершённых матчей"}
-        </p>
-      )}
+      {row.recent_form ? (
+        <ol className="form" aria-label="Последние игры, сначала свежие">
+          {row.recent_form.length === 0 ? <li className="meta">Нет завершённых матчей</li> : row.recent_form.map((outcome, index) => (
+            <li key={`${outcome}-${index}`} className={`form-mark ${outcome}`} title={labels[outcome]}>{outcome === "win" ? "В" : outcome === "draw" ? "Н" : "П"}</li>
+          ))}
+        </ol>
+      ) : null}
       <p className="meta">Сезон {row.season_id ?? ""}. Единица очков — очко за матч сезона.</p>
     </div>
   );
@@ -81,19 +81,23 @@ function HeadToHeadBlock({ result, home, away }: {
     return <EmptyState title="Нет личных встреч" text="В данных сервиса нет завершённых встреч этой пары до текущего матча." />;
   }
   return (
-    <div className="surface">
+    <div className="surface stack">
       {result.demo && <p className="meta">Демонстрационные данные</p>}
-      <ul>
+      <ul className="meetings">
         {matches.map((match) => (
-          <li key={match.match_id}>
-            {new Date(match.starts_at).toLocaleDateString("ru-RU", { timeZone: "UTC" })} ·{" "}
-            {match.home.name} {match.score?.home}:{match.score?.away} {match.away.name}
+          <li className="meeting" key={match.match_id}>
+            <WhenText value={match.starts_at} />
+            <span>{match.home.name}</span>
+            <span className="score-mini">{match.score?.home}:{match.score?.away}</span>
+            <span className="away">{match.away.name}</span>
           </li>
         ))}
       </ul>
-      <p className="meta">
-        Победы «{home}»: {summary.home_wins} · Ничьи: {summary.draws} · Победы «{away}»: {summary.away_wins}
-      </p>
+      <div className="tally">
+        <div><strong>{summary.home_wins}</strong><span className="meta">Победы «{home}»</span></div>
+        <div><strong>{summary.draws}</strong><span className="meta">Ничьи</span></div>
+        <div><strong>{summary.away_wins}</strong><span className="meta">Победы «{away}»</span></div>
+      </div>
     </div>
   );
 }

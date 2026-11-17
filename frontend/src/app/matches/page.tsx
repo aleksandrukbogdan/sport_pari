@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { MatchCard } from "@/modules/cards";
 import { loadMatches, loadStandings } from "@/shared/server-api";
 import { EmptyState, ErrorState, PageTitle } from "@/shared/ui";
@@ -11,7 +9,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
   return (
     <div className="stack">
       <PageTitle title="Матчи и статистика">
-        <p className="muted">Учебный пример. Данные вымышленные, это не прямая трансляция.</p>
+        <p className="lead">Учебный пример. Команды вымышленные: разбирайте счёт и таблицу, а не ход трансляции.</p>
       </PageTitle>
       <form className="row" method="get">
         <label className="field">
@@ -40,7 +38,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
                 {table.data.map((row) => (
                   <tr key={row.team_id}>
                     <td className="num">{row.position ?? "—"}</td>
-                    <td><Link href={`/matches?season_id=${seasonId}`}>{row.team_name}</Link></td>
+                    <td>{row.team_name}</td>
                     <td className="num">{row.played}</td>
                     <td className="num">{row.wins}</td>
                     <td className="num">{row.draws}</td>

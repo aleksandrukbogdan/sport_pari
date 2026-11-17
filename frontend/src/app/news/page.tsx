@@ -12,7 +12,9 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
   const recommendations = viewer ? await loadRecommendations() : null;
   return (
     <div className="stack">
-      <PageTitle title="Новости" />
+      <PageTitle title="Новости">
+        <p className="lead">Прочитайте материал и отметьте дату: от неё зависит, насколько факт ещё актуален.</p>
+      </PageTitle>
       <form className="row" method="get">
         <label className="field">
           <span>Вид спорта</span>
@@ -24,7 +26,7 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
       {!feed.ok ? <ErrorState message={feed.message} href="/news" /> : feed.data.length === 0 ? (
         <EmptyState title={sportId ? "По выбранным фильтрам новостей нет" : "Новостей пока нет"} text="Измените фильтр или вернитесь позже." />
       ) : (
-        <div className="cards">{feed.data.map((item) => <NewsListCard key={item.id} item={item} />)}</div>
+        <div className="cards news-grid">{feed.data.map((item) => <NewsListCard key={item.id} item={item} />)}</div>
       )}
       {recommendations?.ok && recommendations.data.length > 0 ? (
         <section>

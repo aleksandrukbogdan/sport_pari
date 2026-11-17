@@ -9,33 +9,36 @@ export default async function OverviewPage() {
   return (
     <div className="stack">
       <PageTitle title="Обзор">
-        <p className="lead muted">Читайте материал, смотрите статистику матча и отвечайте на вопрос. Доля голосов — это распределение ответов, а не вероятность исхода.</p>
+        <p className="lead">Прочитайте новость, разберите матч, ответьте на вопрос и сверьте ответ с фактом.</p>
       </PageTitle>
       <section>
-        <div className="row">
+        <div className="section-head">
           <h2 className="section-title">Актуальные новости</h2>
           <Link href="/news">Все новости</Link>
         </div>
-        {!news.ok ? <ErrorState message={news.message} href="/" /> : news.data.length === 0 ? <EmptyState title="Новостей пока нет" text="Лента пуста." /> : (
-          <div className="cards two">{news.data.slice(0, 2).map((item) => <NewsListCard key={item.id} item={item} />)}</div>
+        <p className="muted">С них начинается разбор: дата показывает, насколько факт ещё свежий.</p>
+        {!news.ok ? <ErrorState message={news.message} href="/" /> : news.data.length === 0 ? <EmptyState title="Новостей пока нет" text="Когда появится материал, начните разбор с него." /> : (
+          <div className="cards news-grid">{news.data.slice(0, 2).map((item) => <NewsListCard key={item.id} item={item} />)}</div>
         )}
       </section>
       <section>
-        <div className="row">
+        <div className="section-head">
           <h2 className="section-title">Ближайшие матчи</h2>
           <Link href="/matches">Матчи и статистика</Link>
         </div>
+        <p className="muted">Учебный пример. Смотрите статус и счёт, затем переходите к статистике сезона.</p>
         {!matches.ok ? <ErrorState message={matches.message} href="/" /> : matches.data.length === 0 ? <EmptyState title="Матчей нет" text="Сервис матчей не вернул список." /> : (
           <div className="cards two">{matches.data.slice(0, 2).map((match) => <MatchCard key={match.match_id} match={match} href={`/matches/${match.match_id}`} />)}</div>
         )}
       </section>
       <section>
-        <div className="row">
+        <div className="section-head">
           <h2 className="section-title">Доступные вопросы</h2>
           <Link href="/predictions">Прогнозы</Link>
         </div>
-        {!questions.ok ? <ErrorState message={questions.message} href="/" /> : questions.data.length === 0 ? <EmptyState title="Вопросов пока нет" text="Когда администратор создаст вопрос, он появится здесь." /> : (
-          <div className="cards two">{questions.data.slice(0, 2).map((question) => <QuestionCard key={question.id} question={question} />)}</div>
+        <p className="muted">Ответ «да» или «нет». Доля голосов — распределение ответов участников, а не вероятность исхода.</p>
+        {!questions.ok ? <ErrorState message={questions.message} href="/" /> : questions.data.length === 0 ? <EmptyState title="Вопросов пока нет" text="Когда администратор задаст вопрос, ответьте на него здесь." /> : (
+          <div className="cards">{questions.data.slice(0, 2).map((question) => <QuestionCard key={question.id} question={question} />)}</div>
         )}
       </section>
     </div>

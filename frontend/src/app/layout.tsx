@@ -14,7 +14,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="ru">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" />
+        <meta name="theme-color" content="#0c1218" />
       </head>
       <body>
         <AppShell viewer={viewer} demo={isDemo()}>{children}</AppShell>

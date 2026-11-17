@@ -14,7 +14,9 @@ export default async function ProfilePage() {
   if (viewer.demo) {
     return (
       <div className="stack">
-        <PageTitle title="Профиль" />
+        <PageTitle title="Профиль">
+          <p className="lead">Имя и почта — ваша учётная запись. Интересы подбирают новости, сессии показывают, где вы уже вошли.</p>
+        </PageTitle>
         <ProfileForms
           current={false}
           profile={{ username: viewer.username, email: "student@example.edu" }}
@@ -32,7 +34,9 @@ export default async function ProfilePage() {
   const interests = await apiGet<Interests>("user", `/users/${encodeURIComponent(profile.data.id)}/interests`);
   return (
     <div className="stack">
-      <PageTitle title="Профиль" />
+      <PageTitle title="Профиль">
+        <p className="lead">Имя и почта — ваша учётная запись. Интересы подбирают новости, сессии показывают, где вы уже вошли.</p>
+      </PageTitle>
       {!sessions.ok ? <ErrorState message={sessions.message} href="/profile" /> : null}
       {!interests.ok ? <ErrorState message={interests.message} href="/profile" /> : (
         <ProfileForms

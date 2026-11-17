@@ -34,9 +34,13 @@ export function AppShell({ viewer, demo, children }: { viewer: Viewer | null; de
   return (
     <div className="shell">
       <a className="skip" href="#content">К содержанию</a>
+      {open ? <button className="scrim" type="button" aria-label="Закрыть меню" onClick={() => setOpen(false)} /> : null}
       <aside className={open ? "sidebar open" : "sidebar closed"}>
-        <p className="brand">sport_pari</p>
-        <nav className="nav" aria-label="Разделы">
+        <div className="brand-block">
+          <p className="brand">sport_pari</p>
+          <p className="brand-note">Учебная аналитика</p>
+        </div>
+        <nav id="app-nav" className="nav" aria-label="Разделы">
           {links.map((link) => (
             <Link key={link.href} href={link.href} aria-current={pathname === link.href ? "page" : undefined} onClick={() => setOpen(false)}>
               {link.label}

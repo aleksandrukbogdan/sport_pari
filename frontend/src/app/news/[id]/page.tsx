@@ -36,7 +36,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
             ))}
           </ul>
         )}
-        {viewer ? <CommentForm newsId={article.data.id} demo={viewer.demo || article.demo} /> : <p><Link href={`/login?next=/news/${id}`}>Войдите</Link>, чтобы оставить комментарий.</p>}
+        {viewer ? <CommentForm newsId={article.data.id} demo={viewer.demo || article.demo} /> : <Link className="button secondary" href={`/login?next=/news/${id}`}>Войти, чтобы оставить комментарий</Link>}
       </section>
     </article>
   );
