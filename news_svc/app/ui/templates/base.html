@@ -1,0 +1,78 @@
+{% from 'components.html' import icon, nav, notice with context %}
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="dark">
+        <title>{{ title }} · sport_pari</title>
+        <link rel="preload"
+              href="/static/fonts/InterVariable.woff2"
+              as="font"
+              type="font/woff2"
+              crossorigin>
+        <link rel="stylesheet" href="/static/tokens.css">
+        <link rel="stylesheet" href="/static/app.css">
+        <script src="/static/app.js" defer></script>
+    </head>
+    <body>
+        <a class="skip-link" href="#main">К содержимому</a>
+        <aside class="app-sidebar">
+            <a class="brand" href="/preview">
+                <span class="brand-mark">{{ icon("chart") }}</span>
+                <span>sport<span class="brand-accent">_</span>pari</span>
+            </a>
+            <div class="sidebar-label">Платформа</div>
+            {{ nav(active|default('news')) }}
+            <div class="sidebar-note">
+                <strong>Спортивная аналитика</strong>Новости и факты для разбора спортивных событий.
+                <p class="section-gap">Другие сервисы отмечены замком, пока их интерфейсы не подключены.</p>
+            </div>
+        </aside>
+        <div class="workspace">
+            <header class="topbar">
+                <details class="mobile-menu">
+                    <summary aria-label="Открыть навигацию">{{ icon("menu") }}</summary>
+                    <div class="mobile-nav">{{ nav(active|default('news')) }}</div>
+                </details>
+                <span class="topbar-title">Новости</span>
+                <div class="topbar-meta">
+                    <span class="context-label">sport_pari / News</span>
+                    {% if user_id != "anonymous" %}
+                        <details class="user-menu">
+                            <summary>
+                                <span class="avatar">{{ username[:2]|upper }}</span>
+                                <span class="user-name">{{ username }}</span>{{ icon("chevron") }}
+                            </summary>
+                            <div class="dropdown">
+                                <a href="{{ profile_url }}">Настройки новостной ленты</a>
+                                <form method="post" action="/preview/logout" data-pending="Выходим…">
+                                    <button class="btn btn-block"
+                                            type="submit">{{ icon("logout") }}Выйти из профиля</button>
+                                </form>
+                            </div>
+                        </details>
+                    {% else %}
+                        <a class="btn" href="{{ profile_url }}">{{ icon("user") }}Войти</a>
+                    {% endif %}
+                </div>
+            </header>
+            <main class="page" id="main" tabindex="-1">
+                {% if demo %}
+                    {{ notice('Демонстрационные данные. Новости и история чтения созданы для учебной проверки.', 'warning') }}
+                {% endif %}
+                {% if success %}
+                    {{ notice(success) }}
+                {% endif %}
+                {% if error %}
+                    {{ notice(error, 'error') }}
+                {% endif %}
+                {% block content %}{% endblock %}
+                <footer class="footer">
+                    <span>sport_pari · Новости для спортивной аналитики</span>
+                    <a href="/preview/components">Компоненты интерфейса</a>
+                </footer>
+            </main>
+        </div>
+    </body>
+</html>

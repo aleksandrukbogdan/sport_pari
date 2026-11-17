@@ -8,9 +8,13 @@ services:
     # Local compose only. On the platform this port stays internal:
     # the gateway is the public entry and the one that sets X-User-Id.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8003:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://news:news@postgres:5432/news
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://host.docker.internal:8000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      TRUST_GATEWAY_HEADERS: "false"
+      PREVIEW_ENABLED: ${PREVIEW_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,7 +38,7 @@ services:
       POSTGRES_PASSWORD: news
       POSTGRES_DB: news
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - news_pg:/var/lib/postgresql/data
     healthcheck:
@@ -42,6 +46,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  importer:
+    profiles: ["ingest"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-m", "app.ingest", "--interval", "900"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://news:news@postgres:5432/news
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   news_pg:

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% from 'components.html' import empty_state with context %}
+{% block content %}
+    <section class="panel">
+        {{ empty_state(title, message, retry_url, 'Попробовать ещё раз') }}
+    </section>
+{% endblock %}

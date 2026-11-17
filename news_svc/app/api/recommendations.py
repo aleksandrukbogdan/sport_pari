@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import CurrentUserId, NewsRepo, SessionDep
+from app.api.deps import CurrentUserId, NewsRepo, SessionDep, get_user_service
 from app.clients.user_service import UserServiceClient
 from app.recommendations.models import NewsView
 from app.recommendations.repository import PostgresViewRepository
@@ -14,10 +14,6 @@ router = APIRouter()
 
 def get_view_repository(session: SessionDep) -> PostgresViewRepository:
     return PostgresViewRepository(session)
-
-
-def get_user_service() -> UserServiceClient:
-    return UserServiceClient()
 
 
 def get_recommendation_service(

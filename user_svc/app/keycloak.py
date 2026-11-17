@@ -260,13 +260,21 @@ class KeycloakClient:
         users = response.json()
         return users[0] if users else None
 
+    @staticmethod
+    def _profile_fields(user: dict) -> dict:
+        return {
+            name: user[name]
+            for name in ("username", "email", "emailVerified", "firstName", "lastName")
+            if name in user
+        }
+
     def update_interests(self, user_id: str, sport_ids: list[str], team_ids: list[str]) -> dict | None:
         user = self.get_user(user_id)
         if user is None:
             return None
         attributes = {**user.get("attributes", {}), "sport_ids": sport_ids, "team_ids": team_ids}
         response = self._admin_request(
-            "PUT", f"/users/{user_id}", json={"username": user["username"], "attributes": attributes}
+            "PUT", f"/users/{user_id}", json={**self._profile_fields(user), "attributes": attributes}
         )
         if response.status_code == 404:
             return None
@@ -298,7 +306,7 @@ class KeycloakClient:
             payload["requiredActions"] = list(dict.fromkeys([*user.get("requiredActions", []), "VERIFY_EMAIL"]))
         if not payload:
             return UserUpdate(user=user, email_changed=False)
-        payload.setdefault("username", user["username"])
+        payload = {**self._profile_fields(user), **payload}
 
         response = self._admin_request("PUT", f"/users/{user_id}", json=payload)
         if response.status_code == 409:
@@ -320,7 +328,7 @@ class KeycloakClient:
             return None
         deletion_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
         payload = {
-            "username": user["username"],
+            **self._profile_fields(user),
             "enabled": False,
             "attributes": {**user.get("attributes", {}), "deletion_scheduled_at": [deletion_at]},
         }

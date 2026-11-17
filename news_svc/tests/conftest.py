@@ -3,6 +3,7 @@ import tempfile
 
 _db_path = os.path.join(tempfile.gettempdir(), "news_svc_pytest.sqlite")
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_db_path}"
+os.environ["TRUST_GATEWAY_HEADERS"] = "true"
 
 import pytest  # noqa: E402
 from app.db import Base  # noqa: E402
