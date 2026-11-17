@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import JSON, DateTime, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -17,12 +17,17 @@ class News(Base):
     """
 
     __tablename__ = "news"
+    __table_args__ = (Index("ux_news_source_url", "source_url", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(300))
     summary: Mapped[str] = mapped_column(String(500))
     body: Mapped[str] = mapped_column(Text())
     sport_id: Mapped[str] = mapped_column(String(64), index=True)
+    team_ids: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    source_url: Mapped[str | None] = mapped_column(String(2048))
+    source_name: Mapped[str | None] = mapped_column(String(100))
+    image_url: Mapped[str | None] = mapped_column(String(2048))
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         index=True,

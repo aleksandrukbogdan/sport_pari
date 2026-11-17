@@ -14,6 +14,10 @@ def _card(news_row, comments_count: int) -> NewsCard:
         sport_id=news_row.sport_id,
         published_at=news_row.published_at,
         comments_count=comments_count,
+        team_ids=news_row.team_ids,
+        source_url=news_row.source_url,
+        source_name=news_row.source_name,
+        image_url=news_row.image_url,
     )
 
 
@@ -21,10 +25,11 @@ def _card(news_row, comments_count: int) -> NewsCard:
 async def list_news(
     repo: NewsRepo,
     sport_id: str | None = None,
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[NewsCard]:
-    rows = await repo.list_published(sport_id=sport_id, limit=limit, offset=offset)
+    rows = await repo.list_published(sport_id=sport_id, limit=limit, offset=offset, q=q)
     return [_card(news, count) for news, count in rows]
 
 

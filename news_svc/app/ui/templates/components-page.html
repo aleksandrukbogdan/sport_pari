@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from 'components.html' import icon, notice, empty_state, article_card with context %}
+{% block content %}
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">Дизайн-система</p>
+            <h1>Компоненты новостей</h1>
+            <p>Демонстрация компонентов и состояний интерфейса sport_pari.</p>
+        </div>
+    </div>
+    <div class="component-grid">
+        <section class="panel">
+            <h2>Кнопки</h2>
+            <div class="button-row">
+                <a class="btn btn-primary" href="/preview">Основная{{ icon("arrow") }}</a>
+                <a class="btn" href="/preview">Вторичная</a>
+                <button class="btn btn-danger"
+                        type="button"
+                        disabled
+                        title="Демонстрационный образец">Опасное действие</button>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Поля</h2>
+            <label class="field">
+                Поиск по новостям<input placeholder="Команда или событие">
+            </label>
+        </section>
+        <section class="panel">
+            <h2>Статусы</h2>
+            <div class="button-row">
+                <span class="badge badge-success">Сохранено</span>
+                <span class="badge badge-warning">Учебный пример</span>
+                <span class="badge badge-danger">Ошибка</span>
+                <span class="badge">Открыто</span>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Загрузка</h2>
+            <div role="status" aria-label="Загрузка новости">
+                <div class="skeleton skeleton-sm"></div>
+                <div class="skeleton skeleton-lg"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <span class="sr-only">Загрузка материала</span>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Сообщения</h2>
+            {{ notice("Изменения сохранены") }}{{ notice('Не удалось сохранить изменения. Попробуйте ещё раз.', 'error') }}
+        </section>
+        <section class="panel">
+            {{ empty_state('Новости не найдены', 'Измените фильтры или поисковый запрос.', '/preview', 'Все новости') }}
+        </section>
+    </div>
+    {% if sample %}
+        <h2 class="section-gap">Карточка статьи</h2>
+        <div class="feed-panel section-gap">{{ article_card(sample, demo) }}</div>
+    {% endif %}
+{% endblock %}

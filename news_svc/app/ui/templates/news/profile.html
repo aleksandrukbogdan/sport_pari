@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from 'components.html' import icon with context %}
+{% block content %}
+    <nav class="breadcrumbs" aria-label="Путь к настройкам">
+        <a href="{{ return_to }}">Новости</a>
+        <span aria-hidden="true">/</span>
+        <span>{{ 'Настройки ленты' if user_id != 'anonymous' else 'Вход' }}</span>
+    </nav>
+    {% if user_id == "anonymous" %}
+        <section class="panel login-panel">
+            <p class="eyebrow">sport_pari</p>
+            <h1>Войти в новостную ленту</h1>
+            <p>Читайте по своим интересам, сохраняйте историю и участвуйте в обсуждении.</p>
+            <form class="form-grid"
+                  method="post"
+                  action="/preview/login"
+                  data-pending="Входим…">
+                <input type="hidden" name="return_to" value="{{ return_to }}">
+                <label class="field">Имя пользователя<input name="username"
+                                                            required
+                                                            maxlength="255"
+                                                            value="{{ login_username }}"
+                                                            autocomplete="username"
+                                                            {% if error %} aria-invalid="true" {% endif %}>
+                </label>
+                <label class="field">
+                    Пароль<input type="password"
+                                 name="password"
+                                 required
+                                 maxlength="1000"
+                                 autocomplete="current-password">
+                </label>
+                <button class="btn btn-primary" type="submit">Войти{{ icon("arrow") }}</button>
+            </form>
+            <p class="hint section-gap">Используется существующая учётная запись sport_pari. Вход проверяет пользовательский сервис.</p>
+            <a class="text-link section-gap" href="{{ guest_url }}">{{ icon("back") }}Продолжить как гость</a>
+        </section>
+    {% else %}
+        <div class="page-heading">
+            <div>
+                <p class="eyebrow">Новостная лента</p>
+                <h1>Ваши интересы</h1>
+                <p>Выберите виды спорта для персональной выдачи.</p>
+            </div>
+        </div>
+        <div class="profile-grid">
+            <section class="panel">
+                <h2>Виды спорта</h2>
+                <p>Эти настройки сохраняются в вашем профиле sport_pari.</p>
+                {% if interests_available %}
+                    <form method="post" action="/preview/interests" data-pending="Сохраняем…">
+                        <input type="hidden" name="return_to" value="{{ return_to }}">
+                        <input type="hidden" name="format" value="checkboxes">
+                        <fieldset class="checkbox-grid">
+                            <legend class="sr-only">Интересы по видам спорта</legend>
+                            {% for id, label in sports.items() %}
+                                <label class="check-label">
+                                <input type="checkbox"
+                                       name="sports"
+                                       value="{{ id }}"
+                                       {% if id in interest_sports %} checked {% endif %}>{{ label }}</label>
+                            {% endfor %}
+                        </fieldset>
+                        <p class="hint">Пустой выбор очистит интересы по видам спорта. Сохранённые интересы к командам сохранятся.</p>
+                        <button class="btn btn-primary section-gap"
+                                type="submit">Сохранить интересы{{ icon("check") }}</button>
+                    </form>
+                {% else %}
+                    <p class="section-gap">Не удалось получить ваши интересы. Повторите загрузку перед сохранением.</p>
+                    <a class="btn section-gap" href="{{ profile_url }}">Повторить</a>
+                {% endif %}
+            </section>
+            <aside class="sidebar-stack">
+                <section class="panel">
+                    <h2>Профиль</h2>
+                    <p>{{ username }}</p>
+                    <a class="text-link section-gap" href="{{ return_to }}">К новостям{{ icon("arrow") }}</a>
+                </section>
+                <section class="panel">
+                    <h2>Команды</h2>
+                    <p>Каталог команд пока не подключён.</p>
+                    {% if team_ids %}
+                        <p class="section-gap hint">Сохранённые ID</p>
+                        <div class="interest-tags">
+                            {% for id in team_ids %}
+                                <span class="badge">{{ id }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </section>
+            </aside>
+        </div>
+    {% endif %}
+{% endblock %}

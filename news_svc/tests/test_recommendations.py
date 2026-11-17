@@ -105,11 +105,13 @@ async def test_fresh_view_outweighs_two_old_views(client):
     now = datetime.now(UTC)
     old_view = now - timedelta(hours=72)
     async with SessionLocal() as session:
-        session.add_all([
-            NewsView(user_id="reader-1", news_id=stale, created_at=old_view),
-            NewsView(user_id="reader-2", news_id=stale, created_at=old_view),
-            NewsView(user_id="reader-3", news_id=popular, created_at=now),
-        ])
+        session.add_all(
+            [
+                NewsView(user_id="reader-1", news_id=stale, created_at=old_view),
+                NewsView(user_id="reader-2", news_id=stale, created_at=old_view),
+                NewsView(user_id="reader-3", news_id=popular, created_at=now),
+            ]
+        )
         await session.commit()
 
     _use_interests(None)
@@ -126,7 +128,8 @@ async def test_fresh_view_outweighs_two_old_views(client):
     payload = response.json()
     assert [item["news_id"] for item in payload] == [popular, stale]
     assert [item["score"] for item in payload] == pytest.approx(
-        [0.55, 0.5 + 0.1 / 3], abs=0.00001,
+        [0.25, 0.5 / 3],
+        abs=0.00001,
     )
 
 
@@ -156,3 +159,45 @@ def select_views():
     from sqlalchemy import select
 
     return select(NewsView)
+
+
+async def test_large_football_feed_does_not_displace_hockey_interest(client):
+    from datetime import timedelta
+
+    from sqlalchemy import insert
+
+    now = datetime.now(UTC)
+    async with SessionLocal.begin() as session:
+        await session.execute(
+            insert(News),
+            [
+                {
+                    "title": f"Football {index}",
+                    "summary": "Lead",
+                    "body": "Football news",
+                    "sport_id": "football",
+                    "published_at": now,
+                }
+                for index in range(501)
+            ],
+        )
+        hockey = News(
+            title="Hockey",
+            summary="Lead",
+            body="Hockey game",
+            sport_id="hockey",
+            published_at=now - timedelta(days=1),
+        )
+        session.add(hockey)
+        await session.flush()
+        hockey_id = hockey.id
+    _use_interests(UserInterests(sport_ids=["hockey"], team_ids=[]))
+    try:
+        response = await client.get(
+            "/api/v1/recommendations", headers={"X-User-Id": "reader"}
+        )
+        assert response.status_code == 200
+        assert response.json()[0]["news_id"] == hockey_id
+        assert response.json()[0]["reason"] == "sport"
+    finally:
+        app.dependency_overrides.clear()

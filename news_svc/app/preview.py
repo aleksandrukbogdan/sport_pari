@@ -1,158 +1,569 @@
-from html import escape
-from typing import Annotated
-from urllib.parse import quote
+import re
+from math import ceil
+from typing import Annotated, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.api.deps import CommentRepo, NewsRepo
+from app.api.deps import CommentRepo, NewsRepo, get_user_service
 from app.api.recommendations import Recommendations, ViewRepo
+from app.clients.user_service import UserInterests, UserServiceClient
 from app.comments.models import Comment
 from app.recommendations.models import NewsView
+from app.ui import SPORTS, templates
 
 router = APIRouter(include_in_schema=False)
-_SPORT_LABELS = {"football": "Футбол", "hockey": "Хоккей", "tennis": "Теннис"}
+PAGE_SIZE = 12
+Users = Annotated[UserServiceClient, Depends(get_user_service)]
 
 
-def _page(title: str, body: str) -> HTMLResponse:
-    document = f"""<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(title)}</title>
-  <style>
-    :root {{ color-scheme: light; font-family: system-ui, sans-serif; }}
-    body {{ margin: 0; background: #f4f6fa; color: #172033; line-height: 1.5; }}
-    main {{ max-width: 70rem; margin: auto; padding: 2rem 1rem; }}
-    h1, h2, h3, p {{ margin: 0 0 .65rem; }}
-    a {{ color: #174e9e; }}
-    .panels {{ display: grid; grid-template-columns: 3fr 2fr; gap: 1rem; align-items: start; }}
-    section {{ background: white; border: 1px solid #d7deea; border-radius: .75rem; padding: 1rem; }}
-    article, li {{ border-top: 1px solid #d7deea; padding: .75rem 0; }}
-    ol {{ padding-inline-start: 1.75rem; margin-bottom: 0; }}
-    .meta {{ color: #465674; font-size: .9rem; }}
-    .badge {{ display: inline-block; padding: .15rem .5rem; border-radius: .4rem; background: #eaf0fb; }}
-    .seen {{ background: #edf0f3; }}
-    nav {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }}
-    nav a, button {{ background: white; border: 1px solid #bbc9e0; border-radius: .45rem; padding: .45rem .7rem; }}
-    nav a[aria-current="page"] {{ background: #174e9e; color: white; }}
-    form {{ max-width: 35rem; margin-top: 1rem; }}
-    textarea {{ box-sizing: border-box; width: 100%; min-height: 5rem; }}
-    @media (max-width: 46rem) {{ .panels {{ grid-template-columns: 1fr; }} }}
-  </style>
-</head>
-<body>
-<main>{body}</main>
-</body>
-</html>"""
-    return HTMLResponse(document, headers={"Cache-Control": "no-store"})
+def safe_return(value: str | None) -> str:
+    if not value:
+        return "/preview"
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return "/preview"
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or "\\" in value
+        or any(ord(char) < 32 for char in value)
+    ):
+        return "/preview"
+    if parsed.path == "/preview" or re.fullmatch(r"/preview/news/\d+", parsed.path):
+        return value
+    return "/preview"
 
 
-def _sport_label(sport_id: str) -> str:
-    return escape(_SPORT_LABELS.get(sport_id, sport_id))
+def link(path: str, **values) -> str:
+    query = urlencode(
+        {
+            key: value
+            for key, value in values.items()
+            if value is not None and value != ""
+        }
+    )
+    return path + ("?" + query if query else "")
 
 
-def _profile_picker(profiles: dict[str, str], user_id: str) -> str:
-    links = []
-    for profile_id, label in profiles.items():
-        current = ' aria-current="page"' if profile_id == user_id else ""
-        links.append(f'<a href="/preview?user_id={quote(profile_id, safe="")}"{current}>{escape(label)}</a>')
-    return '<nav aria-label="Демо-профили">' + "".join(links) + "</nav>"
+def guest_link(target):
+    parsed = urlsplit(safe_return(target))
+    if parsed.path == "/preview":
+        params = dict(parse_qsl(parsed.query))
+        params["view"] = "all"
+        return link("/preview", **params)
+    return safe_return(target)
+
+
+def context(
+    request: Request, user_id: str = "anonymous", target: str = "/preview", **values
+):
+    profiles = getattr(request.app.state, "preview_profiles", {})
+    profile = getattr(request.state, "preview_profile", {})
+    name = profiles.get(user_id, profile.get("username", user_id))
+    return dict(
+        request=request,
+        user_id=user_id,
+        username=name if user_id != "anonymous" else "Гость",
+        profile_url=link(
+            "/preview/profile",
+            return_to=safe_return(target),
+            user_id=user_id if profiles else None,
+        ),
+        demo=bool(profiles),
+        profiles=profiles,
+        sports=SPORTS,
+        success=None,
+        error=None,
+        guest_url=guest_link(target),
+        **values,
+    )
+
+
+def render(request, template, data, status_code=200):
+    return templates.TemplateResponse(
+        request=request,
+        name=template,
+        context=data,
+        status_code=status_code,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def error_response(request, title, message, *, status_code=503, retry_url="/preview"):
+    data = context(
+        request, title=title, message=message, retry_url=safe_return(retry_url)
+    )
+    return render(request, "error.html", data, status_code)
+
+
+async def preview_user(request: Request, users: Users, user_id: str = "demo") -> str:
+    if getattr(request.app.state, "preview_profiles", None):
+        return user_id
+    token = request.cookies.get("preview_token")
+    if token:
+        try:
+            profile = await users.profile(f"Bearer {token}")
+        except HTTPException as error:
+            if error.status_code in (401, 403, 404):
+                request.state.session_expired = True
+                return "anonymous"
+            raise
+        request.state.preview_profile = profile
+        return profile["id"]
+    return "anonymous"
+
+
+PreviewUser = Annotated[str, Depends(preview_user)]
+
+
+def signed_in_response(request: Request, token: str, return_to: str):
+    response = RedirectResponse(safe_return(return_to), status_code=303)
+    response.set_cookie(
+        "preview_token",
+        token,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        max_age=1800,
+        path="/preview",
+    )
+    return response
+
+
+@router.post("/preview/login")
+async def preview_login(
+    request: Request,
+    users: Users,
+    username: Annotated[str, Form(min_length=1, max_length=255)],
+    password: Annotated[str, Form(min_length=1, max_length=1000)],
+    return_to: Annotated[str, Form()] = "/preview",
+):
+    try:
+        token = await users.login(username.strip(), password)
+        await users.profile(f"Bearer {token}")
+    except HTTPException as error:
+        message = "Не удалось войти. Проверьте имя пользователя и пароль."
+        if error.status_code == 403:
+            message = "Вход требует подтверждения или обновления учётной записи в пользовательском сервисе."
+        elif error.status_code == 429:
+            message = "Слишком много попыток входа. Попробуйте позднее."
+        elif error.status_code >= 500:
+            message = "Сервис входа временно недоступен. Попробуйте ещё раз."
+        data = context(
+            request,
+            target=safe_return(return_to),
+            title="Вход",
+            active="profile",
+            return_to=safe_return(return_to),
+            login_username=username,
+        )
+        data["error"] = message
+        return render(request, "news/profile.html", data, error.status_code)
+    return signed_in_response(request, token, return_to)
+
+
+@router.post("/preview/session")
+async def preview_session(
+    request: Request,
+    token: Annotated[str, Form()],
+    users: Users,
+    return_to: Annotated[str, Form()] = "/preview",
+):
+    await users.profile(f"Bearer {token}")
+    return signed_in_response(request, token, return_to)
+
+
+@router.post("/preview/logout")
+async def preview_logout():
+    response = RedirectResponse("/preview", status_code=303)
+    response.delete_cookie("preview_token", path="/preview")
+    return response
+
+
+@router.get("/preview/profile", response_class=HTMLResponse)
+async def preview_profile(
+    request: Request,
+    users: Users,
+    user_id: PreviewUser,
+    return_to: str = "/preview",
+    saved: bool = False,
+):
+    data = context(
+        request,
+        user_id,
+        return_to,
+        title="Настройки ленты",
+        active="profile",
+        return_to=safe_return(return_to),
+        login_username="",
+    )
+    if user_id != "anonymous":
+        interests = await users.get_interests(user_id)
+        data.update(
+            interest_sports=interests.sport_ids if interests else [],
+            team_ids=interests.team_ids if interests else [],
+            interests_available=interests is not None and not data["demo"],
+        )
+        if interests:
+            data["sports"] = {
+                **SPORTS,
+                **{
+                    sport: sport for sport in interests.sport_ids if sport not in SPORTS
+                },
+            }
+    if saved:
+        data["success"] = (
+            "Интересы сохранены. Персональная лента обновится при следующем открытии."
+        )
+    elif getattr(request.state, "session_expired", False):
+        data["error"] = "Сессия истекла. Войдите ещё раз, чтобы продолжить."
+    return render(request, "news/profile.html", data)
+
+
+@router.post("/preview/interests")
+async def preview_interests(
+    request: Request,
+    users: Users,
+    sport_ids: Annotated[str, Form(max_length=13000)] = "",
+    team_ids: Annotated[str, Form(max_length=13000)] = "",
+    return_to: Annotated[str, Form()] = "/preview",
+):
+    token = request.cookies.get("preview_token")
+    if not token:
+        return RedirectResponse(
+            link("/preview/profile", return_to=safe_return(return_to)), status_code=303
+        )
+    form = await request.form()
+    profile = None
+    existing = None
+    try:
+        if form.get("format") == "checkboxes":
+            profile = await users.profile(f"Bearer {token}")
+            existing = await users.get_interests(profile["id"])
+            if existing is None:
+                raise HTTPException(503, "Interests unavailable")
+            interests = UserInterests(
+                sport_ids=form.getlist("sports"), team_ids=existing.team_ids
+            )
+        else:
+            interests = UserInterests(
+                sport_ids=[
+                    value.strip() for value in sport_ids.split(",") if value.strip()
+                ],
+                team_ids=[
+                    value.strip() for value in team_ids.split(",") if value.strip()
+                ],
+            )
+        await users.authorized_request(
+            "PUT", "/user/interests", f"Bearer {token}", json=interests.model_dump()
+        )
+    except (HTTPException, ValueError) as error:
+        if form.get("format") == "checkboxes":
+            if profile:
+                request.state.preview_profile = profile
+            data = context(
+                request,
+                profile["id"] if profile else "anonymous",
+                safe_return(return_to),
+                title="Настройки ленты",
+                active="profile",
+                return_to=safe_return(return_to),
+                login_username="",
+                interest_sports=form.getlist("sports"),
+                team_ids=existing.team_ids if existing else [],
+                interests_available=profile is not None,
+            )
+            data["error"] = (
+                "Не удалось сохранить интересы. Ваш выбор сохранён в форме. Попробуйте ещё раз."
+                if profile
+                else "Сессия истекла или сервис входа недоступен. Войдите в профиль ещё раз."
+            )
+            return render(
+                request,
+                "news/profile.html",
+                data,
+                error.status_code if isinstance(error, HTTPException) else 422,
+            )
+        data = context(
+            request,
+            title="Не удалось сохранить интересы",
+            message="Профиль временно недоступен или сессия истекла. Вернитесь к настройкам и повторите сохранение.",
+            retry_url=safe_return(return_to),
+        )
+        return render(request, "error.html", data, 503)
+    if form.get("format") == "checkboxes":
+        return RedirectResponse(
+            link("/preview/profile", saved=1, return_to=safe_return(return_to)),
+            status_code=303,
+        )
+    return RedirectResponse(safe_return(return_to), status_code=303)
+
+
+def card(article, comments_count, user_id, return_to, *, demo=False, rank=None):
+    return {
+        "article": article,
+        "comments_count": comments_count,
+        "href": link(
+            f"/preview/news/{article.id}",
+            user_id=user_id if demo else None,
+            return_to=return_to,
+        ),
+        "rank": rank,
+    }
 
 
 @router.get("/preview", response_class=HTMLResponse)
 async def preview(
-    request: Request, news: NewsRepo, recommendations: Recommendations, user_id: str = "demo",
-) -> HTMLResponse:
-    rows = await news.list_published(sport_id=None, limit=20, offset=0)
-    picks = await recommendations.rank_for_user(user_id, limit=10)
-    user_query = quote(user_id, safe="")
-    profiles = getattr(request.app.state, "preview_profiles", {})
-    profile_label = profiles.get(user_id, user_id)
-    picker = _profile_picker(profiles, user_id) if profiles else ""
-    cards = []
-    for article, count in rows:
-        href = f"/preview/news/{article.id}?user_id={user_query}"
-        cards.append(
-            "<article>"
-            f'<h3><a href="{href}">{escape(article.title)}</a></h3>'
-            f"<p>{escape(article.summary)}</p>"
-            f'<p class="meta">{_sport_label(article.sport_id)} · комментариев {count}</p>'
-            "</article>"
+    request: Request,
+    news: NewsRepo,
+    recommendations: Recommendations,
+    user_id: PreviewUser,
+    q: str | None = Query(default=None, max_length=200),
+    sport_id: str | None = None,
+    view: Literal["all", "for-you"] = "all",
+    offset: int = Query(0, ge=0),
+):
+    q = (q or "").strip()
+    sport_id = sport_id or None
+    demo = bool(getattr(request.app.state, "preview_profiles", None))
+    params = {
+        "q": q,
+        "sport_id": sport_id,
+        "view": view,
+        "user_id": user_id if demo else None,
+    }
+    current_url = link("/preview", **params, offset=offset if offset else None)
+    if view == "for-you" and user_id == "anonymous":
+        return RedirectResponse(
+            link("/preview/profile", return_to=current_url), status_code=303
         )
-
-    pick_lines = []
-    for pick in picks:
-        article = pick.news
-        reason = "По интересам" if pick.recommendation.reason == "sport" else "По популярности и свежести"
-        seen_badge = '<span class="badge seen">Открыто</span>' if pick.seen else '<span class="badge">Новое</span>'
-        href = f"/preview/news/{article.id}?user_id={user_query}"
-        pick_lines.append(
-            f'<li><h3><a href="{href}">{escape(article.title)}</a></h3>'
-            f'<p class="meta">{_sport_label(article.sport_id)} · {reason} · {seen_badge}</p>'
-            f'<p class="meta">Оценка {pick.recommendation.score:.3f} · вес просмотров {pick.popularity:.3f}</p></li>'
-        )
-    ranked = f'<ol>{"".join(pick_lines)}</ol>' if pick_lines else "<p>Пока нет рекомендаций.</p>"
-    feed = "".join(cards) or "<p>Лента пустая. Запустите python -m app.seed.</p>"
-    body = (
-        "<h1>Новостная лента</h1>"
-        f'<p class="meta">Профиль · {escape(profile_label)}</p>{picker}'
-        '<div class="panels">'
-        '<section aria-labelledby="recommendations"><h2 id="recommendations">Рекомендации</h2>'
-        "<p>Откройте статью и вернитесь к рекомендациям. Она будет отмечена как открытая и опустится ниже новых.</p>"
-        f"{ranked}</section>"
-        f'<section aria-labelledby="feed"><h2 id="feed">Лента по дате публикации</h2>{feed}</section></div>'
+    counts = await news.sport_counts()
+    interests = (
+        await recommendations.users.get_interests(user_id)
+        if user_id != "anonymous"
+        else None
     )
-    return _page("Новости", body)
+    # Ranking uses the same service as the public API. Filtering preserves its order.
+    ranked = await recommendations.rank_for_user(
+        user_id, limit=1000 if view == "for-you" else 10
+    )
+    if view == "for-you":
+        ranked = [
+            item
+            for item in ranked
+            if (not sport_id or item.news.sport_id == sport_id)
+            and (
+                not q
+                or q.casefold() in f"{item.news.title} {item.news.body}".casefold()
+            )
+        ]
+        total = len(ranked)
+        cards = [
+            card(
+                item.news,
+                item.comments_count,
+                user_id,
+                current_url,
+                demo=demo,
+                rank=item,
+            )
+            for item in ranked[offset : offset + PAGE_SIZE]
+        ]
+    else:
+        total = await news.count_published(sport_id=sport_id, q=q)
+        rows = await news.list_published(
+            sport_id=sport_id, q=q, offset=offset, limit=PAGE_SIZE
+        )
+        cards = [
+            card(article, count, user_id, current_url, demo=demo)
+            for article, count in rows
+        ]
+    pages = max(1, ceil(total / PAGE_SIZE))
+    if offset and offset >= total:
+        return RedirectResponse(
+            link(
+                "/preview",
+                **params,
+                offset=(pages - 1) * PAGE_SIZE if pages > 1 else None,
+            ),
+            status_code=303,
+        )
+    data = context(
+        request,
+        user_id,
+        current_url,
+        title="Новости",
+        view=view,
+        cards=cards,
+        total=total,
+        recommendations=[
+            card(
+                item.news,
+                item.comments_count,
+                user_id,
+                current_url,
+                demo=demo,
+                rank=item,
+            )
+            for item in ranked[:10]
+        ],
+        inventory_count=sum(counts.values()),
+        sport_counts=counts,
+        q=q,
+        sport_id=sport_id,
+        chips=[
+            {
+                "id": id,
+                "label": SPORTS.get(id, id),
+                "count": counts.get(id, 0),
+                "href": link("/preview", **{**params, "sport_id": id}),
+            }
+            for id in SPORTS
+            if counts.get(id)
+        ],
+        interest_sports=interests.sport_ids if interests else [],
+        all_url=link("/preview", **{**params, "view": "all"}),
+        personal_url=link("/preview", **{**params, "view": "for-you"}),
+        clear_sport_url=link("/preview", **{**params, "sport_id": None}),
+        reset_url=link("/preview", view=view, user_id=user_id if demo else None),
+        previous_url=link("/preview", **params, offset=max(0, offset - PAGE_SIZE))
+        if offset
+        else None,
+        next_url=link("/preview", **params, offset=offset + PAGE_SIZE)
+        if offset + PAGE_SIZE < total
+        else None,
+        page=offset // PAGE_SIZE + 1,
+        pages=pages,
+    )
+    return render(request, "news/feed.html", data)
+
+
+async def article_response(
+    request,
+    news_id,
+    news,
+    comments,
+    user_id,
+    return_to,
+    *,
+    draft="",
+    error=None,
+    status=200,
+    comment_offset=0,
+):
+    row = await news.get(news_id)
+    if row is None:
+        return error_response(
+            request,
+            "Материал не найден",
+            "Возможно, публикация снята или адрес изменился. Вернитесь к новостям.",
+            status_code=404,
+        )
+    article, count = row
+    thread = await comments.list_for_news(news_id, limit=50, offset=comment_offset)
+    demo = bool(getattr(request.app.state, "preview_profiles", None))
+    next_comments = (
+        link(
+            f"/preview/news/{news_id}",
+            return_to=return_to,
+            comment_offset=comment_offset + 50,
+            user_id=user_id if demo else None,
+        )
+        if comment_offset + 50 < count
+        else None
+    )
+    data = context(
+        request,
+        user_id,
+        link(f"/preview/news/{news_id}", return_to=return_to),
+        title=article.title,
+        article=article,
+        comments_count=count,
+        comments=thread,
+        return_to=return_to,
+        draft=draft,
+        comments_next=next_comments,
+    )
+    data["error"] = error
+    if request.query_params.get("comment") == "sent" and not error:
+        data["success"] = "Комментарий опубликован."
+    return render(request, "news/article.html", data, status)
 
 
 @router.get("/preview/news/{news_id}", response_class=HTMLResponse)
 async def preview_article(
+    request: Request,
     news_id: int,
     news: NewsRepo,
     comments: CommentRepo,
     views: ViewRepo,
-    user_id: str = "demo",
-) -> HTMLResponse:
-    row = await news.get(news_id)
-    if row is None:
-        return _page("Нет материала", "<p>Материал не найден.</p><p><a href=\"/preview\">К ленте</a></p>")
-    article, count = row
-    await views.add(NewsView(user_id=user_id, news_id=news_id))
-    thread = await comments.list_for_news(news_id, limit=50, offset=0)
-    rendered_comments = "".join(
-        f"<article><p>{escape(item.author_id)}</p><p>{escape(item.body)}</p></article>"
-        for item in thread
-    ) or "<p>Комментариев пока нет.</p>"
-    body = (
-        f'<p><a href="/preview?user_id={quote(user_id, safe="")}">К рекомендациям и ленте</a></p>'
-        f"<h1>{escape(article.title)}</h1>"
-        f"<p>{escape(article.summary)}</p>"
-        f"<p>{escape(article.body)}</p>"
-        f"<p>Комментариев: {count}</p>"
-        f"<h2>Комментарии</h2>{rendered_comments}"
-        f"<form method=\"post\" action=\"/preview/news/{news_id}/comments\">"
-        f"<input type=\"hidden\" name=\"user_id\" value=\"{escape(user_id)}\">"
-        f"<textarea name=\"body\" required></textarea>"
-        f"<button type=\"submit\">Отправить</button>"
-        f"</form>"
+    user_id: PreviewUser,
+    return_to: str = "/preview",
+    comment_offset: int = Query(0, ge=0),
+):
+    if user_id != "anonymous" and await news.get(news_id) is not None:
+        await views.add(NewsView(user_id=user_id, news_id=news_id))
+    return await article_response(
+        request,
+        news_id,
+        news,
+        comments,
+        user_id,
+        safe_return(return_to),
+        comment_offset=comment_offset,
     )
-    return _page(article.title, body)
 
 
 @router.post("/preview/news/{news_id}/comments")
 async def preview_comment(
+    request: Request,
     news_id: int,
     comments: CommentRepo,
+    news: NewsRepo,
+    authenticated_user: PreviewUser,
     user_id: Annotated[str, Form()],
     body: Annotated[str, Form()],
-) -> RedirectResponse:
+    return_to: Annotated[str, Form()] = "/preview",
+):
+    demo = bool(getattr(request.app.state, "preview_profiles", None))
+    author = user_id.strip() if demo else authenticated_user
+    article_url = link(
+        f"/preview/news/{news_id}",
+        user_id=author if demo else None,
+        return_to=safe_return(return_to),
+    )
+    if author == "anonymous":
+        return RedirectResponse(
+            link("/preview/profile", return_to=article_url), status_code=303
+        )
     text = body.strip()
-    author = user_id.strip()
-    if text and author:
-        await comments.add(Comment(news_id=news_id, author_id=author, body=text))
-    return RedirectResponse(
-        f"/preview/news/{news_id}?user_id={quote(author or user_id)}",
-        status_code=303,
+    if not text or len(text) > 2000:
+        return await article_response(
+            request,
+            news_id,
+            news,
+            comments,
+            author,
+            safe_return(return_to),
+            draft=body,
+            error="Введите комментарий от 1 до 2000 символов.",
+            status=422,
+        )
+    await comments.add(Comment(news_id=news_id, author_id=author, body=text))
+    return RedirectResponse(article_url + "&comment=sent#comments", status_code=303)
+
+
+@router.get("/preview/components", response_class=HTMLResponse)
+async def components_page(request: Request, news: NewsRepo, user_id: PreviewUser):
+    rows = await news.list_published(sport_id=None, limit=1, offset=0)
+    sample = (
+        card(rows[0][0], rows[0][1], user_id, "/preview/components") if rows else None
+    )
+    return render(
+        request,
+        "components-page.html",
+        context(request, user_id, title="Компоненты интерфейса", sample=sample),
     )

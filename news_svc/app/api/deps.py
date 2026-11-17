@@ -3,7 +3,9 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.user_service import UserServiceClient
 from app.comments.repository import PostgresCommentRepository
+from app.config import settings
 from app.db import get_session
 from app.news.repository import PostgresNewsRepository
 
@@ -22,20 +24,28 @@ NewsRepo = Annotated[PostgresNewsRepository, Depends(get_news_repository)]
 CommentRepo = Annotated[PostgresCommentRepository, Depends(get_comment_repository)]
 
 
-def get_current_user_id(x_user_id: Annotated[str | None, Header()] = None) -> str:
-    """Identity is the gateway's job.
+def get_user_service() -> UserServiceClient:
+    return UserServiceClient()
 
-    The header is trusted only because news-svc is not a public entry.
-    On the platform the process listens on the internal network, and the
-    gateway is what sets X-User-Id after authentication. This service does
-    not validate JWT and does not keep a users table. A client that can open
-    the port directly could send someone else's id; that port is published
-    only for local compose.
-    """
 
-    if not x_user_id or not x_user_id.strip():
-        raise HTTPException(status_code=401, detail="X-User-Id is required")
-    return x_user_id.strip()
+async def get_current_user_id(
+    users: Annotated[UserServiceClient, Depends(get_user_service)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_user_id: Annotated[str | None, Header()] = None,
+) -> str:
+    """Validate bearer tokens using user_svc; allow gateway IDs only when configured."""
+
+    if authorization:
+        if not authorization.lower().startswith("bearer "):
+            raise HTTPException(401, "Bearer token required")
+        return (await users.profile(authorization))["id"]
+    if (
+        settings.trust_gateway_headers
+        and x_user_id
+        and 0 < len(x_user_id.strip()) <= 64
+    ):
+        return x_user_id.strip()
+    raise HTTPException(401, "Authorization is required")
 
 
 CurrentUserId = Annotated[str, Depends(get_current_user_id)]

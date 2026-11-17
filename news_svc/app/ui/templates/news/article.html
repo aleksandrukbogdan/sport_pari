@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from 'components.html' import icon, notice with context %}
+{% block content %}
+    <nav class="breadcrumbs" aria-label="Путь к статье">
+        <a href="{{ return_to }}">Новости</a>
+        <span aria-hidden="true">/</span>
+        <span>{{ sport_label(article.sport_id) }}</span>
+    </nav>
+    <div class="article-layout">
+        <div class="article-main">
+            <a class="text-link" href="{{ return_to }}">{{ icon("back") }}К рекомендациям и ленте</a>
+            <article>
+                <header class="article-header">
+                    <span class="badge badge-sport">{{ sport_label(article.sport_id) }}</span>
+                    {% if demo %}
+                        <span class="badge badge-warning">Учебный пример</span>
+                    {% endif %}
+                    <h1>{{ article.title }}</h1>
+                    <div class="news-meta">
+                        <time datetime="{{ date_iso(article.published_at) }}">{{ date_label(article.published_at) }}</time>
+                        {% if article.source_name %}
+                            <span aria-hidden="true">·</span>
+                            <span class="news-source">{{ article.source_name }}</span>
+                        {% endif %}
+                        <span aria-hidden="true">·</span>
+                        <a href="#comments">{{ comments_count }} комментариев</a>
+                    </div>
+                </header>
+                {% if article.image_url %}
+                    <img class="article-image"
+                         src="{{ article.image_url }}"
+                         alt="Изображение из материала «{{ article.title }}»"
+                         referrerpolicy="no-referrer">
+                {% endif %}
+                {% if article.summary %}
+                    <p class="article-lead">{{ article.summary }}</p>
+                {% endif %}
+                {% if article.body != article.summary %}
+                    <div class="article-body">{{ article.body }}</div>
+                {% endif %}
+                {% if article.source_url %}
+                    <div class="source-note">
+                        <p>Анонс публикации {{ article.source_name or 'источника' }}. Полный текст и дополнительные сведения доступны в оригинале.</p>
+                        <a class="text-link"
+                           href="{{ article.source_url }}"
+                           target="_blank"
+                           rel="noopener noreferrer">Оригинал · {{ article.source_name or 'Источник' }}{{ icon("external") }}</a>
+                    </div>
+                {% endif %}
+            </article>
+            <section class="comments" id="comments">
+                <div class="comments-heading">
+                    <h2>Комментарии</h2>
+                    <span class="badge">{{ comments_count }}</span>
+                </div>
+                <p class="hint">Обсуждайте факты и аргументы. При необходимости указывайте источник.</p>
+                {% for item in comments %}
+                    <article class="comment">
+                        <div class="comment-header">
+                            <span class="avatar">{{ 'ВЫ' if item.author_id == user_id else item.author_id[:2]|upper }}</span>
+                            <div>
+                                <p class="comment-author">{{ 'Вы' if item.author_id == user_id else 'Пользователь ' ~ item.author_id[:8] }}</p>
+                                <time class="hint"
+                                      datetime="{{ date_iso(item.created_at) }}">{{ date_label(item.created_at) }}</time>
+                            </div>
+                        </div>
+                        <p class="comment-body">{{ item.body }}</p>
+                    </article>
+                {% else %}
+                    <p class="section-gap hint">Комментариев пока нет. Вы можете начать обсуждение.</p>
+                {% endfor %}
+                {% if comments_next %}
+                    <a class="text-link section-gap"
+                       href="{{ comments_next }}#comments">Следующие комментарии{{ icon("arrow") }}</a>
+                {% endif %}
+                {% if user_id != "anonymous" %}
+                    <form class="comment-form"
+                          method="post"
+                          action="/preview/news/{{ article.id }}/comments"
+                          data-pending="Отправляем…">
+                        <input type="hidden" name="user_id" value="{{ user_id }}">
+                        <input type="hidden" name="return_to" value="{{ return_to }}">
+                        <label class="field">
+                            Ваш комментарий<textarea name="body"
+                                                     maxlength="2000"
+                                                     required
+                                                     placeholder="Какие выводы можно сделать из этой новости?"
+                                                     data-draft-key="news-comment-{{ article.id }}-{{ user_id }}">{{ draft }}</textarea>
+                        </label>
+                        <div class="form-footer">
+                            <span class="hint" data-character-count>0 / 2000</span>
+                            <button class="btn btn-primary"
+                                    type="submit">Отправить комментарий{{ icon("arrow") }}</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="source-note">
+                        <p>Войдите, чтобы участвовать в обсуждении.</p>
+                        <a class="btn btn-primary section-gap" href="{{ profile_url }}">Войти</a>
+                    </div>
+                {% endif %}
+            </section>
+        </div>
+        <aside class="panel">
+            <div class="panel-header">
+                <h2>Контекст материала</h2>
+                {{ icon("info") }}
+            </div>
+            <p>Сопоставляйте новость со статистикой и первоисточниками, прежде чем делать выводы.</p>
+            <ul class="note-list">
+                <li>Проверьте дату публикации.</li>
+                <li>Прочитайте оригинал.</li>
+                <li>Отделите факты от предположений.</li>
+            </ul>
+            <a class="text-link section-gap" href="{{ return_to }}">Вернуться к новостям{{ icon("arrow") }}</a>
+        </aside>
+    </div>
+{% endblock %}

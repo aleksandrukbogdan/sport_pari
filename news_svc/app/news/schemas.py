@@ -14,6 +14,10 @@ class NewsCard(BaseModel):
     sport_id: str
     published_at: datetime
     comments_count: int = 0
+    team_ids: list[str] = []
+    source_url: str | None = None
+    source_name: str | None = None
+    image_url: str | None = None
 
 
 class NewsDetail(NewsCard):

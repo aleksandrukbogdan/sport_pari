@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% from 'components.html' import icon, article_card, explanation, empty_state, pagination with context %}
+{% block content %}
+    <div class="breadcrumbs">
+        <span>sport_pari</span>
+        <span aria-hidden="true">/</span>
+        <span>Новости</span>
+    </div>
+    <div class="page-heading">
+        <div>
+            <p class="eyebrow">Новости спорта</p>
+            <h1>Новости</h1>
+            <p>Публикации источников и материалы по вашим интересам.</p>
+        </div>
+        <span class="count">{{ inventory_count }} материалов · {{ sport_counts|length }} видов спорта</span>
+    </div>
+    <nav class="tabs" aria-label="Вид ленты">
+        <a class="tab"
+           href="{{ all_url }}"
+           {% if view == 'all' %} aria-current="page" {% endif %}>{{ icon("news") }}Все новости</a>
+        <a class="tab"
+           href="{{ personal_url }}"
+           {% if view == 'for-you' %} aria-current="page" {% endif %}>{{ icon("spark") }}Для вас</a>
+    </nav>
+    <div class="filters">
+        <form class="filter-form" method="get" action="/preview">
+            <input type="hidden" name="view" value="{{ view }}">
+            {% if demo %}
+                <input type="hidden" name="user_id" value="{{ user_id }}">
+            {% endif %}
+            <label class="field search-field">
+                Поиск по новостям{{ icon("search") }}<input type="search"
+                                                            name="q"
+                                                            value="{{ q }}"
+                                                            placeholder="Новость, команда или событие"
+                                                            maxlength="200">
+            </label>
+            <label class="field">
+                Вид спорта<select name="sport_id">
+                <option value="">Все виды спорта</option>
+                {% for id, label in sports.items() %}
+                    <option value="{{ id }}" {% if sport_id == id %} selected {% endif %}>{{ label }}</option>
+                {% endfor %}
+                </select>
+            </label>
+            <button class="btn" type="submit">Найти{{ icon("arrow") }}</button>
+        </form>
+        <nav class="sport-chips" aria-label="Фильтр по виду спорта">
+            <a class="chip"
+               href="{{ clear_sport_url }}"
+               {% if not sport_id %} aria-current="page" {% endif %}>Все виды<span class="chip-count">{{ inventory_count }}</span>
+            </a>
+            {% for chip in chips %}
+                <a class="chip"
+                   href="{{ chip.href }}"
+                   {% if sport_id == chip.id %} aria-current="page" {% endif %}>{{ chip.label }}<span class="chip-count">{{ chip.count }}</span>
+                </a>
+            {% endfor %}
+        </nav>
+    </div>
+    <div class="content-grid">
+        <div>
+            {% if view == "for-you" %}
+                <section aria-labelledby="recommendations">
+                    <div class="panel-header">
+                        <h2 id="recommendations">Рекомендации</h2>
+                        <span class="hint">С учётом ваших интересов</span>
+                    </div>
+                    <div class="feed-panel">
+                        {% for item in cards %}
+                            {{ article_card(item, demo, item.rank) }}
+                        {% else %}
+                            {{ empty_state('Подходящих материалов пока нет', 'Измените фильтры или откройте общую ленту.', all_url, 'Все новости') }}
+                        {% endfor %}
+                    </div>
+                </section>
+            {% else %}
+                <section aria-labelledby="feed">
+                    <div class="panel-header">
+                        <h2 id="feed">
+                            {% if q %}
+                                Результаты поиска
+                            {% else %}
+                                Последние публикации
+                            {% endif %}
+                        </h2>
+                        <span class="hint">{{ total }} материалов
+                            {% if not q %}
+                                · сначала новые
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="feed-panel">
+                        {% for item in cards %}
+                            {{ article_card(item, demo) }}
+                        {% else %}
+                            {{ empty_state('Новости не найдены', 'По выбранным фильтрам нет материалов. Попробуйте другой запрос или сбросьте фильтры.', reset_url, 'Сбросить фильтры') }}
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+            {{ pagination(previous_url, next_url, page, pages) }}
+        </div>
+        <aside class="sidebar-stack">
+            <section class="panel" aria-labelledby="interests-heading">
+                <div class="panel-header">
+                    <h2 id="interests-heading">Ваша лента</h2>
+                    {{ icon("spark") }}
+                </div>
+                {% if user_id == "anonymous" %}
+                    <p>Войдите, чтобы видеть новости по интересам и сохранять историю чтения.</p>
+                    <a class="btn btn-primary btn-block section-gap"
+                       href="{{ profile_url }}">Войти{{ icon("arrow") }}</a>
+                {% else %}
+                    <p>Интересы помогают подбирать материалы для вас.</p>
+                    <div class="interest-tags">
+                        {% for id in interest_sports %}
+                            <span class="chip chip-selected">{{ sport_label(id) }}</span>
+                        {% else %}
+                            <span class="hint">Интересы ещё не выбраны</span>
+                        {% endfor %}
+                    </div>
+                    <a class="text-link" href="{{ profile_url }}">Настроить интересы{{ icon("arrow") }}</a>
+                {% endif %}
+                {% if demo %}
+                    <nav class="interest-tags" aria-label="Демо-профили">
+                        {% for id, label in profiles.items() %}
+                            <a class="chip"
+                               href="/preview?user_id={{ id }}"
+                               {% if user_id == id %} aria-current="page" {% endif %}>{{ label }}</a>
+                        {% endfor %}
+                    </nav>
+                {% endif %}
+            </section>
+            {% if view == "all" %}
+                <section class="panel" aria-labelledby="recommendations">
+                    <div class="panel-header">
+                        <h2 id="recommendations">Рекомендации</h2>
+                        {{ icon("news") }}
+                    </div>
+                    <ol class="rank-list">
+                        {% for item in recommendations %}
+                            <li class="rank-item">
+                                <span class="rank-number">{{ '%02d'|format(loop.index) }} · {{ sport_label(item.article.sport_id) }}</span>
+                                <h3>
+                                    <a class="news-title" href="{{ item.href }}">{{ item.article.title }}</a>
+                                </h3>
+                                {% if item.rank.seen %}
+                                    <span class="badge seen">Открыто</span>
+                                {% endif %}
+                                {{ explanation(item.rank) }}
+                            </li>
+                        {% else %}
+                            <p class="hint">Пока нет рекомендаций.</p>
+                        {% endfor %}
+                    </ol>
+                </section>
+            {% else %}
+                <section class="panel">
+                    <div class="panel-header">
+                        <h2>Как устроена выдача</h2>
+                        {{ icon("info") }}
+                    </div>
+                    <ul class="note-list">
+                        <li>Виды спорта из вашего профиля.</li>
+                        <li>Материалы, похожие на прочитанные.</li>
+                        <li>Просмотры и обсуждения с учётом давности.</li>
+                        <li>Открытые статьи остаются ниже новых.</li>
+                    </ul>
+                </section>
+            {% endif %}
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>Работа с источниками</h2>
+                    {{ icon("external") }}
+                </div>
+                <p>Проверяйте дату и контекст публикации. Для полного текста перейдите к оригиналу на странице статьи.</p>
+            </section>
+        </aside>
+    </div>
+{% endblock %}
