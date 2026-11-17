@@ -7,6 +7,7 @@ from app import database
 from app.events import create_event
 from app.schemas import Match
 from app.schemas import Score
+from app.statistics import head_to_head
 from app.statistics import standings
 from app.statistics import team_statistics
 
@@ -41,6 +42,12 @@ def get_match(match_id: int):
         raise HTTPException(status_code=404, detail="Матч не найден")
 
     return match
+
+
+@app.get("/matches/{match_id}/head-to-head")
+def get_head_to_head(match_id: int, limit: int = Query(default=5, ge=1, le=10)):
+    match = get_match(match_id)
+    return head_to_head(database.read_matches(), match, limit)
 
 
 @app.post("/matches", response_model=Match, status_code=201)

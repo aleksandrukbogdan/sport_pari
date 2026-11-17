@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 
-import { demoArticle, demoMatches, demoNews, demoQuestions, demoStandings } from "@/shared/demo";
+import { demoArticle, demoHeadToHeads, demoMatches, demoNews, demoQuestions, demoStandings } from "@/shared/demo";
 import { errorMessage, isDemo } from "@/shared/labels";
-import type { CommentItem, LoadResult, MatchItem, NewsCard, NewsDetail, QuestionItem, Recommendation, Standing, Viewer } from "@/shared/types";
+import type { CommentItem, HeadToHead, LoadResult, MatchItem, NewsCard, NewsDetail, QuestionItem, Recommendation, Standing, Viewer } from "@/shared/types";
 
 type ServiceName = "user" | "news" | "sports" | "prediction";
 
@@ -119,6 +119,16 @@ export async function loadMatch(id: string): Promise<LoadResult<MatchItem>> {
     return { ok: true, demo: true, data: match };
   }
   return apiGet<MatchItem>("sports", `/matches/${encodeURIComponent(id)}`);
+}
+
+export async function loadHeadToHead(id: string): Promise<LoadResult<HeadToHead>> {
+  if (isDemo()) {
+    const data = demoHeadToHeads[id] ?? {
+      matches: [], summary: { home_wins: 0, draws: 0, away_wins: 0 },
+    };
+    return { ok: true, demo: true, data };
+  }
+  return apiGet<HeadToHead>("sports", `/matches/${encodeURIComponent(id)}/head-to-head`);
 }
 
 export async function loadStandings(seasonId: string): Promise<LoadResult<Standing[]>> {

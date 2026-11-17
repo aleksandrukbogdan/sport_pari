@@ -29,8 +29,9 @@ def team_statistics(matches: list[Match], team_id: int, season_id: int):
         "points": 0,
     }
 
+    recent_results = []
     for match in matches:
-        # подсчет только завершённые матчи нужного сезона
+        # Учитываем только завершённые матчи нужного сезона.
         if match.season_id != season_id or match.status != "finished":
             continue
 
@@ -50,13 +51,20 @@ def team_statistics(matches: list[Match], team_id: int, season_id: int):
 
         if scored > conceded:
             result["wins"] += 1
+            outcome = "win"
         elif scored == conceded:
             result["draws"] += 1
+            outcome = "draw"
         else:
             result["losses"] += 1
+            outcome = "loss"
+        recent_results.append((match.starts_at, match.match_id, outcome))
 
     result["goal_difference"] = result["goals_for"] - result["goals_against"]
     result["points"] = result["wins"] * 3 + result["draws"]
+    # При одинаковом времени используем номер матча для стабильного порядка.
+    recent_results.sort(reverse=True)
+    result["recent_form"] = [outcome for _, _, outcome in recent_results[:5]]
     return result
 
 
@@ -81,3 +89,33 @@ def standings(matches: list[Match], season_id: int):
 
 def table_order(row):
     return (-row["points"], -row["goal_difference"], -row["goals_for"], row["team_id"])
+
+
+def head_to_head(matches: list[Match], current: Match, limit: int = 5):
+    home_id = current.home.id
+    team_ids = {home_id, current.away.id}
+    meetings = [
+        match for match in matches
+        if match.match_id != current.match_id
+        and match.starts_at < current.starts_at
+        and match.status == "finished"
+        and match.sport == current.sport
+        and {match.home.id, match.away.id} == team_ids
+    ]
+    meetings.sort(key=lambda match: (match.starts_at, match.match_id), reverse=True)
+    meetings = meetings[:limit]
+
+    summary = {"home_wins": 0, "draws": 0, "away_wins": 0}
+    for match in meetings:
+        # Считаем победы с позиции команд текущего матча.
+        home_score, away_score = match.score.home, match.score.away
+        if match.home.id != home_id:
+            home_score, away_score = away_score, home_score
+        if home_score == away_score:
+            summary["draws"] += 1
+        elif home_score > away_score:
+            summary["home_wins"] += 1
+        else:
+            summary["away_wins"] += 1
+
+    return {"matches": meetings, "summary": summary}

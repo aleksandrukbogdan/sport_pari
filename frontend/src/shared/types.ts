@@ -35,6 +35,11 @@ export type MatchItem = {
   score: { home: number; away: number } | null;
 };
 
+export type HeadToHead = {
+  matches: MatchItem[];
+  summary: { home_wins: number; draws: number; away_wins: number };
+};
+
 export type Standing = {
   position?: number;
   team_id: number;
@@ -48,6 +53,7 @@ export type Standing = {
   goals_against: number;
   goal_difference: number;
   points: number;
+  recent_form?: ("win" | "draw" | "loss")[];
 };
 
 export type QuestionItem = {
